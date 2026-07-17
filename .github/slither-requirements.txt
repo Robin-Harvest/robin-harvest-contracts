@@ -1,0 +1,2 @@
+# Exact top-level pin; pip resolves the analyzer's compatible transitive dependencies.
+slither-analyzer==0.11.3
