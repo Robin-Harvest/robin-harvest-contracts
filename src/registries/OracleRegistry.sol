@@ -5,7 +5,14 @@ import {AccessManaged} from "@openzeppelin/contracts/access/manager/AccessManage
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Constants} from "../libraries/Constants.sol";
 import {Events} from "../libraries/Events.sol";
-import {Disabled, InvalidBasisPoints, InvalidOracleAnswer, StaleOracle, ZeroAddress, ZeroAmount} from "../libraries/Errors.sol";
+import {
+    Disabled,
+    InvalidBasisPoints,
+    InvalidOracleAnswer,
+    StaleOracle,
+    ZeroAddress,
+    ZeroAmount
+} from "../libraries/Errors.sol";
 import {IOracleRegistry} from "../interfaces/IOracleRegistry.sol";
 import {IPriceFeed} from "../interfaces/external/IPriceFeed.sol";
 import {OracleConfig} from "../types/ProtocolTypes.sol";
@@ -33,11 +40,16 @@ contract OracleRegistry is IOracleRegistry, AccessManaged, Events {
         config = _configs[asset];
     }
 
+    // Justification: The oracle freshness check validates observedAt against block.timestamp to detect stale feeds.
+    // Miner manipulation on block.timestamp is negligible relative to the heartbeat window (usually hours).
+    // slither-disable-next-line timestamp
     function getValidatedPrice(address asset) external view returns (uint256 price, uint256 updatedAt) {
         OracleConfig memory config = _configs[asset];
         if (config.feed == address(0)) revert ZeroAddress();
         if (config.paused) revert Disabled(config.feed);
 
+        // Justification: the startedAt parameter returned by latestRoundData is intentionally unused.
+        // slither-disable-next-line unused-return
         (uint80 roundId, int256 answer,, uint256 observedAt, uint80 answeredInRound) =
             IPriceFeed(config.feed).latestRoundData();
         if (answer <= 0 || observedAt == 0) revert InvalidOracleAnswer(config.feed);

@@ -102,4 +102,27 @@ contract StrategyBaseTest is Test {
 
         assertEq(index.balanceOf(user), amount);
     }
+
+    function testRewardTokenTrackingAndRemoval() public {
+        vm.startPrank(governance);
+        strategy.addRewardToken(address(rewardA));
+        strategy.addRewardToken(address(rewardB));
+        
+        assertTrue(strategy.isRewardTokenTracked(address(rewardA)));
+        assertTrue(strategy.isRewardTokenTracked(address(rewardB)));
+        
+        address[] memory tokensBefore = strategy.rewardTokens();
+        assertEq(tokensBefore.length, 2);
+        assertEq(tokensBefore[0], address(rewardA));
+        assertEq(tokensBefore[1], address(rewardB));
+
+        strategy.removeRewardToken(address(rewardA));
+        assertFalse(strategy.isRewardTokenTracked(address(rewardA)));
+        assertTrue(strategy.isRewardTokenTracked(address(rewardB)));
+
+        address[] memory tokensAfter = strategy.rewardTokens();
+        assertEq(tokensAfter.length, 1);
+        assertEq(tokensAfter[0], address(rewardB));
+        vm.stopPrank();
+    }
 }

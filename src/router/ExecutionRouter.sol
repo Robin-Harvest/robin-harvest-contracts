@@ -9,7 +9,15 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Constants} from "../libraries/Constants.sol";
 import {Events} from "../libraries/Events.sol";
-import {DeadlineExpired, InsufficientOutput, InvalidBasisPoints, NotApproved, OracleDeviationExceeded, ZeroAddress, ZeroAmount} from "../libraries/Errors.sol";
+import {
+    DeadlineExpired,
+    InsufficientOutput,
+    InvalidBasisPoints,
+    NotApproved,
+    OracleDeviationExceeded,
+    ZeroAddress,
+    ZeroAmount
+} from "../libraries/Errors.sol";
 import {IDexAdapter} from "../interfaces/IDexAdapter.sol";
 import {IExecutionRouter} from "../interfaces/IExecutionRouter.sol";
 import {IOracleRegistry} from "../interfaces/IOracleRegistry.sol";
@@ -48,6 +56,9 @@ contract ExecutionRouter is IExecutionRouter, AccessManaged, ReentrancyGuard, Ev
         oracleRegistry = oracleRegistry_;
     }
 
+    // Justification: The swap deadline check validates that the tx is executed before user's deadline.
+    // Miner block timestamp manipulation is bounded to seconds and violate user intent is extremely unlikely.
+    // slither-disable-next-line timestamp
     function swapExactInput(SwapRequest calldata request, address recipient)
         external
         nonReentrant
@@ -68,9 +79,12 @@ contract ExecutionRouter is IExecutionRouter, AccessManaged, ReentrancyGuard, Ev
 
         tokenIn.safeTransferFrom(msg.sender, address(this), request.amountIn);
         tokenIn.forceApprove(request.adapter, request.amountIn);
-        amountOut = IDexAdapter(request.adapter).swapExactInput(
-            request.tokenIn, request.tokenOut, request.amountIn, request.minAmountOut, recipient, request.deadline
-        );
+        // Justification: Reentrancy is impossible because this function is protected by the `nonReentrant` modifier.
+        // slither-disable-next-line reentrancy-no-eth,reentrancy-benign,reentrancy-balance
+        amountOut = IDexAdapter(request.adapter)
+            .swapExactInput(
+                request.tokenIn, request.tokenOut, request.amountIn, request.minAmountOut, recipient, request.deadline
+            );
         tokenIn.forceApprove(request.adapter, 0);
 
         uint256 balanceAfter = tokenOut.balanceOf(recipient);
@@ -104,13 +118,10 @@ contract ExecutionRouter is IExecutionRouter, AccessManaged, ReentrancyGuard, Ev
         emit AdapterApprovalUpdated(adapter, approved);
     }
 
-    function setRoute(
-        address adapter,
-        address tokenIn,
-        address tokenOut,
-        bool enabled,
-        uint16 maxOracleDeviationBps
-    ) external restricted {
+    function setRoute(address adapter, address tokenIn, address tokenOut, bool enabled, uint16 maxOracleDeviationBps)
+        external
+        restricted
+    {
         if (adapter == address(0) || tokenIn == address(0) || tokenOut == address(0)) revert ZeroAddress();
         if (maxOracleDeviationBps > Constants.MAX_BPS) revert InvalidBasisPoints(maxOracleDeviationBps);
         bytes32 routeId = getRouteId(adapter, tokenIn, tokenOut);
@@ -128,13 +139,18 @@ contract ExecutionRouter is IExecutionRouter, AccessManaged, ReentrancyGuard, Ev
     {
         if (maxDeviationBps == 0) return;
 
+        // Justification: the updatedAt timestamp returned by getValidatedPrice is checked inside
+        // oracleRegistry, so the router does not need to verify it again.
+        // slither-disable-next-line unused-return
         (uint256 priceIn,) = oracleRegistry.getValidatedPrice(request.tokenIn);
+        // Justification: the updatedAt timestamp returned by getValidatedPrice is checked inside
+        // oracleRegistry, so the router does not need to verify it again.
+        // slither-disable-next-line unused-return
         (uint256 priceOut,) = oracleRegistry.getValidatedPrice(request.tokenOut);
         uint8 decimalsIn = IERC20Metadata(request.tokenIn).decimals();
         uint8 decimalsOut = IERC20Metadata(request.tokenOut).decimals();
 
-        uint256 expectedOut =
-            request.amountIn.mulDiv(priceIn, priceOut).mulDiv(10 ** decimalsOut, 10 ** decimalsIn);
+        uint256 expectedOut = request.amountIn.mulDiv(priceIn, priceOut).mulDiv(10 ** decimalsOut, 10 ** decimalsIn);
         if (expectedOut == 0) return;
 
         uint256 deviation = amountOut > expectedOut ? amountOut - expectedOut : expectedOut - amountOut;

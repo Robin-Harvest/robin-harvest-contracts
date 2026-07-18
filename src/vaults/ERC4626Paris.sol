@@ -131,10 +131,15 @@ abstract contract ERC4626Paris is ERC20, IERC4626 {
         emit Withdraw(caller, receiver, owner, assets, shares);
     }
 
+    // Justification: _decimalsOffset() is a virtual hook meant to be overridden by inheriting vaults.
+    // slither-disable-next-line dead-code
     function _decimalsOffset() internal view virtual returns (uint8) {
         return 0;
     }
 
+    // Justification: staticcall is used to query the optional decimals parameter of the ERC20 token safely
+    // without reverting if the token does not implement decimals().
+    // slither-disable-next-line low-level-calls
     function _tryGetAssetDecimals(IERC20 asset_) private view returns (uint8) {
         (bool success, bytes memory data) = address(asset_).staticcall(abi.encodeCall(IERC20Metadata.decimals, ()));
         if (!success || data.length < 32) return 18;

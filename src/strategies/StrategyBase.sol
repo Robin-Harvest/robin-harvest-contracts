@@ -8,16 +8,15 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {Events} from "../libraries/Events.sol";
 import {InvalidLifecycleState, ZeroAddress, ZeroAmount} from "../libraries/Errors.sol";
 import {IRobinStrategy} from "../interfaces/IRobinStrategy.sol";
+import {IRobinVaultReport} from "../interfaces/IRobinVaultReport.sol";
 import {HarvestReport, LifecycleState} from "../types/ProtocolTypes.sol";
-
-interface IRobinVaultReport {
-    function report(HarvestReport calldata report_) external;
-}
 
 /// @title Robin Harvest Strategy Base
 /// @notice Abstract framework for isolated, keeper-triggered strategies attached to a single RobinVault.
 /// @dev Later strategies implement protocol-specific reward claiming, deployment, and NAV hooks. This base never accepts
 /// arbitrary calldata and never performs Index Finance, portfolio, or retention policy logic directly.
+// Justification: StrategyBase is an abstract base contract, and the inheriting strategies will implement these functions.
+// slither-disable-next-line unimplemented-functions
 abstract contract StrategyBase is IRobinStrategy, AccessManaged, ReentrancyGuard, Events {
     using SafeERC20 for IERC20;
 
@@ -99,6 +98,11 @@ abstract contract StrategyBase is IRobinStrategy, AccessManaged, ReentrancyGuard
         for (uint256 i; i < tokens.length; ++i) {
             address token = tokens[i];
             if (isRewardTokenIsolated[token]) continue;
+            // Justification: Calls processRewardToken externally via `this.` intentionally to execute
+            // it inside a try-catch block. This isolates individual reward token failures during harvest.
+            // Justification: The return value of processRewardToken is intentionally ignored here, as the overall
+            // gain is calculated via totalAssets() delta at the end of the harvest.
+            // slither-disable-next-line calls-loop,unused-return
             try this.processRewardToken(token) returns (uint256) {}
             catch (bytes memory reasonData) {
                 isRewardTokenIsolated[token] = true;
@@ -152,13 +156,7 @@ abstract contract StrategyBase is IRobinStrategy, AccessManaged, ReentrancyGuard
         _setLifecycleState(LifecycleState.Shutdown);
     }
 
-    function emergencyWithdraw()
-        external
-        override
-        restricted
-        nonReentrant
-        returns (uint256 amountFreed, uint256 loss)
-    {
+    function emergencyWithdraw() external override restricted nonReentrant returns (uint256 amountFreed, uint256 loss) {
         loss = _emergencyWithdraw();
         amountFreed = _asset.balanceOf(address(this));
         if (amountFreed != 0) _asset.safeTransfer(vault, amountFreed);
@@ -182,12 +180,16 @@ abstract contract StrategyBase is IRobinStrategy, AccessManaged, ReentrancyGuard
         if (!isRewardTokenTracked[token]) return;
         isRewardTokenTracked[token] = false;
         uint256 length = _rewardTokens.length;
+        uint256 foundIndex = type(uint256).max;
         for (uint256 i; i < length; ++i) {
             if (_rewardTokens[i] == token) {
-                _rewardTokens[i] = _rewardTokens[length - 1];
-                _rewardTokens.pop();
+                foundIndex = i;
                 break;
             }
+        }
+        if (foundIndex != type(uint256).max) {
+            _rewardTokens[foundIndex] = _rewardTokens[length - 1];
+            _rewardTokens.pop();
         }
         emit RewardTokenTracked(token, false);
     }
@@ -198,6 +200,8 @@ abstract contract StrategyBase is IRobinStrategy, AccessManaged, ReentrancyGuard
         emit RewardTokenIsolationUpdated(token, isolated);
     }
 
+    // Justification: _setTokenExposure is an internal helper hook intended for concrete strategies that inherit StrategyBase.
+    // slither-disable-next-line dead-code
     function _setTokenExposure(address token, uint16 exposureBps) internal {
         tokenExposureBps[token] = exposureBps;
     }

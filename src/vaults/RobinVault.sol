@@ -8,8 +8,15 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Constants} from "../libraries/Constants.sol";
 import {Events} from "../libraries/Events.sol";
-import {InvalidAccounting, InvalidBasisPoints, InvalidLifecycleState, LossExceedsMaximum, ZeroAddress} from "../libraries/Errors.sol";
+import {
+    InvalidAccounting,
+    InvalidBasisPoints,
+    InvalidLifecycleState,
+    LossExceedsMaximum,
+    ZeroAddress
+} from "../libraries/Errors.sol";
 import {IRobinStrategy} from "../interfaces/IRobinStrategy.sol";
+import {IRobinVaultReport} from "../interfaces/IRobinVaultReport.sol";
 import {HarvestReport, LifecycleState} from "../types/ProtocolTypes.sol";
 import {ERC4626Paris} from "./ERC4626Paris.sol";
 
@@ -20,7 +27,7 @@ import {ERC4626Paris} from "./ERC4626Paris.sol";
 /// - `totalAssets()` excludes still-locked profit, reducing harvest sandwich incentives.
 /// - Strategy withdrawals are bounded by caller-selected or governance-default max loss.
 /// - In-kind redemption is intentionally only a reserved hook until the later Growth phases.
-contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events {
+contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events, IRobinVaultReport {
     using SafeERC20 for IERC20;
     using Math for uint256;
 
@@ -87,12 +94,17 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events {
     }
 
     /// @notice Returns total managed assets, excluding still-locked profit.
+    // Justification: block.timestamp is used via _lockedProfitRemaining() to calculate linear profit unlocking.
+    // Minor timestamp variations are negligible over multi-day profit unlocking windows.
+    // slither-disable-next-line timestamp
     function totalAssets() public view override returns (uint256) {
         uint256 grossAssets = IERC20(asset()).balanceOf(address(this)) + strategyDebt;
         uint256 remainingLockedProfit = _lockedProfitRemaining();
         return grossAssets > remainingLockedProfit ? grossAssets - remainingLockedProfit : 0;
     }
 
+    // Justification: Calls totalAssets() which uses block.timestamp to dynamically compute remaining locked profit.
+    // slither-disable-next-line timestamp
     function maxDeposit(address) public view override returns (uint256) {
         if (lifecycleState != LifecycleState.Active) return 0;
         uint256 managedAssets = totalAssets();
@@ -104,12 +116,7 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events {
         return previewDeposit(maxDeposit(receiver));
     }
 
-    function deposit(uint256 assets, address receiver)
-        public
-        override
-        nonReentrant
-        returns (uint256 shares)
-    {
+    function deposit(uint256 assets, address receiver) public override nonReentrant returns (uint256 shares) {
         shares = super.deposit(assets, receiver);
     }
 
@@ -169,6 +176,9 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events {
     }
 
     /// @notice Installs the sole strategy for this V1 vault.
+    // Justification: Checks strategyDebt, which can be tainted by block.timestamp via profit reports.
+    // However, this comparison does not rely on or check time.
+    // slither-disable-next-line timestamp
     function setStrategy(address newStrategy) external restricted {
         if (newStrategy == address(0)) revert ZeroAddress();
         if (address(strategy) != address(0) && strategyDebt != 0) revert StrategyAlreadySet();
@@ -226,6 +236,9 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events {
     }
 
     /// @notice Deploys idle assets to the single strategy while preserving the configured buffer.
+    // Justification: `deployed` is computed via `_deployableIdle()`, which relies on `totalAssets()`,
+    // which in turn is tainted by block.timestamp. The check `deployed != 0` is not a time dependency.
+    // slither-disable-next-line timestamp
     function deployIdle() external restricted nonReentrant returns (uint256 deployed) {
         deployed = _deployableIdle();
         if (deployed != 0) _deployToStrategy(deployed);
@@ -254,12 +267,17 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events {
         emit StrategyDebtUpdated(msg.sender, previousDebt, newDebt);
     }
 
+    // Justification: qualifyingBalance uses totalAssets() which is tainted by block.timestamp.
+    // The comparison against threshold is not dependent on block.timestamp manipulation.
+    // slither-disable-next-line timestamp
     function isEligible() public view returns (bool eligible, uint256 qualifyingBalance, uint256 threshold) {
         qualifyingBalance = totalAssets();
         threshold = eligibilityThreshold;
         eligible = threshold == 0 || qualifyingBalance >= threshold;
     }
 
+    // Justification: uses maxWithdraw() which relies on totalAssets() (tainted by block.timestamp).
+    // slither-disable-next-line timestamp
     function _withdrawWithMaxLoss(uint256 assets, address receiver, address owner, uint16 maxLossBps)
         private
         returns (uint256 shares)
@@ -269,6 +287,8 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events {
         _withdrawWithLossBound(_msgSender(), receiver, owner, assets, shares, maxLossBps);
     }
 
+    // Justification: uses maxRedeem() which relies on totalAssets() (tainted by block.timestamp).
+    // slither-disable-next-line timestamp
     function _redeemWithMaxLoss(uint256 shares, address receiver, address owner, uint16 maxLossBps)
         private
         returns (uint256 assets)
@@ -292,19 +312,26 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events {
         _enforcePostWithdrawEligibility();
     }
 
+    // Justification: Tainted by strategyDebt. But it does not rely on or check time.
+    // slither-disable-next-line timestamp
     function _deployToStrategy(uint256 assets) private {
         if (lifecycleState != LifecycleState.Active) revert InvalidLifecycleState(uint8(lifecycleState));
         IRobinStrategy currentStrategy = strategy;
         if (address(currentStrategy) == address(0)) revert ZeroAddress();
+        // Justification: assets == 0 is checking a parameter input, not a state variable, to return early.
+        // slither-disable-next-line incorrect-equality
         if (assets == 0) return;
 
         uint256 previousDebt = strategyDebt;
-        IERC20(asset()).safeTransfer(address(currentStrategy), assets);
-        currentStrategy.deployFunds(assets);
         strategyDebt = previousDebt + assets;
         emit StrategyDebtUpdated(address(currentStrategy), previousDebt, strategyDebt);
+
+        IERC20(asset()).safeTransfer(address(currentStrategy), assets);
+        currentStrategy.deployFunds(assets);
     }
 
+    // Justification: Tainted by strategyDebt. But it does not rely on or check time.
+    // slither-disable-next-line timestamp
     function _ensureLiquidity(uint256 assets, uint16 maxLossBps) private {
         IERC20 assetToken = IERC20(asset());
         uint256 idle = assetToken.balanceOf(address(this));
@@ -315,9 +342,16 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events {
 
         uint256 shortfall = assets - idle;
         uint256 balanceBefore = idle;
+        // Justification: CEI cannot be applied here because the state update (strategyDebt reduction) depends
+        // on the `amountFreed` and `loss` returned by the external `freeFunds` call.
+        // Reentrancy is prevented because all user-facing functions calling this internal method (withdraw, redeem)
+        // are protected by the `nonReentrant` modifier.
+        // slither-disable-next-line reentrancy-no-eth,reentrancy-benign,reentrancy-balance
         (uint256 amountFreed, uint256 loss) = currentStrategy.freeFunds(shortfall);
 
         uint256 lossDenominator = amountFreed + loss;
+        // Justification: lossDenominator == 0 check is necessary to prevent division by zero.
+        // slither-disable-next-line incorrect-equality
         uint256 lossBps = lossDenominator == 0 ? 0 : loss.mulDiv(Constants.BPS, lossDenominator, Math.Rounding.Ceil);
         if (lossBps > maxLossBps) revert LossExceedsMaximum(lossBps, maxLossBps);
 
@@ -333,6 +367,8 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events {
         if (balanceAfter < assets) revert InvalidAccounting();
     }
 
+    // Justification: Calls totalAssets() which is tainted by block.timestamp.
+    // slither-disable-next-line timestamp
     function _deployableIdle() private view returns (uint256) {
         uint256 idle = IERC20(asset()).balanceOf(address(this));
         uint256 targetIdle = totalAssets().mulDiv(idleBufferBps, Constants.BPS);
@@ -340,8 +376,12 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events {
     }
 
     function _lockedProfitRemaining() private view returns (uint256) {
+        // Justification: lockedProfit == 0 is checking status flag to return early.
+        // slither-disable-next-line incorrect-equality
         if (lockedProfit == 0) return 0;
         uint256 duration = profitMaxUnlockTime;
+        // Justification: Linear profit unlock is time-dependent by design.
+        // slither-disable-next-line timestamp
         if (duration == 0 || block.timestamp >= lastProfitUpdate + duration) return 0;
         uint256 elapsed = block.timestamp - lastProfitUpdate;
         return lockedProfit - lockedProfit.mulDiv(elapsed, duration);
@@ -352,6 +392,8 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events {
         lastProfitUpdate = block.timestamp;
     }
 
+    // Justification: assetsAfterWithdraw uses totalAssets() which is tainted by block.timestamp.
+    // slither-disable-next-line timestamp
     function _enforcePostWithdrawEligibility() private view {
         uint256 minimum = minPostWithdrawAssets;
         if (minimum == 0) return;
