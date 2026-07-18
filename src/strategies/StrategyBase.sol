@@ -156,7 +156,13 @@ abstract contract StrategyBase is IRobinStrategy, AccessManaged, ReentrancyGuard
         _setLifecycleState(LifecycleState.Shutdown);
     }
 
-    function emergencyWithdraw() external override restricted nonReentrant returns (uint256 amountFreed, uint256 loss) {
+    function emergencyWithdraw()
+        external
+        override
+        restricted
+        nonReentrant
+        returns (uint256 amountFreed, uint256 loss)
+    {
         loss = _emergencyWithdraw();
         amountFreed = _asset.balanceOf(address(this));
         if (amountFreed != 0) _asset.safeTransfer(vault, amountFreed);

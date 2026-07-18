@@ -107,10 +107,10 @@ contract StrategyBaseTest is Test {
         vm.startPrank(governance);
         strategy.addRewardToken(address(rewardA));
         strategy.addRewardToken(address(rewardB));
-        
+
         assertTrue(strategy.isRewardTokenTracked(address(rewardA)));
         assertTrue(strategy.isRewardTokenTracked(address(rewardB)));
-        
+
         address[] memory tokensBefore = strategy.rewardTokens();
         assertEq(tokensBefore.length, 2);
         assertEq(tokensBefore[0], address(rewardA));

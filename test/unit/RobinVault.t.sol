@@ -169,7 +169,7 @@ contract RobinVaultTest is Test {
 
     function testVaultStrategyReentrancyPrevention() public {
         ReenteringStrategy reentrantStrategy = new ReenteringStrategy(address(vault), index, address(manager));
-        
+
         vm.prank(governance);
         vault.setStrategy(address(reentrantStrategy));
 
