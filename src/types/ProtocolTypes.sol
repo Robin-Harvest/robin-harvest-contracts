@@ -37,6 +37,7 @@ struct HarvestReport {
 /// @notice Configuration governing whether and how a reward token may be handled.
 /// @param enabled Whether the reward token is approved for processing.
 /// @param category Portfolio category assigned to the token.
+/// @param disposition Processing action assigned to the token.
 /// @param oracle Registered oracle identifier or feed address for the token.
 /// @param minHarvestAmount Minimum raw token amount worth processing.
 /// @param retainable Whether a strategy may hold the token after harvest.
@@ -45,6 +46,7 @@ struct HarvestReport {
 struct RewardTokenConfig {
     bool enabled;
     RewardCategory category;
+    RewardDisposition disposition;
     address oracle;
     uint256 minHarvestAmount;
     bool retainable;
@@ -57,12 +59,14 @@ struct RewardTokenConfig {
 /// @param heartbeat Maximum permitted age of a price observation, in seconds.
 /// @param decimals Number of decimals in normalized feed answers.
 /// @param maxDeviationBps Maximum permitted deviation from the configured reference check.
+/// @param uiMultiplier Multiplier applied after decimal normalization, using 1e18 precision.
 /// @param paused Whether reads from the feed are disabled.
 struct OracleConfig {
     address feed;
     uint48 heartbeat;
     uint8 decimals;
     uint16 maxDeviationBps;
+    uint256 uiMultiplier;
     bool paused;
 }
 
