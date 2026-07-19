@@ -213,8 +213,12 @@ abstract contract StrategyBase is IRobinStrategy, AccessManaged, ReentrancyGuard
     }
 
     modifier onlyVault() {
-        if (msg.sender != vault) revert OnlyVault(msg.sender);
+        _checkOnlyVault();
         _;
+    }
+
+    function _checkOnlyVault() internal view {
+        if (msg.sender != vault) revert OnlyVault(msg.sender);
     }
 
     function _setLifecycleState(LifecycleState newState) private {

@@ -209,19 +209,14 @@ contract GrowthStrategy is CoreStrategy, IInKindRedemptionStrategy {
         address[] memory tokens = _retainedTokens;
         uint256[] memory amounts = new uint256[](tokens.length);
         uint256 indexPosition = IERC20(asset()).balanceOf(address(this)) + deployedAssets();
+        uint256 debt = IRobinVaultInKindAccounting(vault).strategyDebt();
 
-        if (shares == supply) {
-            result.indexPaid = indexPosition;
-            result.debtReduction = IRobinVaultInKindAccounting(vault).strategyDebt();
-            for (uint256 i; i < tokens.length; ++i) {
-                amounts[i] = retainedBalance[tokens[i]];
-            }
-        } else {
-            result.indexPaid = indexPosition.mulDiv(shares, supply);
-            result.debtReduction = IRobinVaultInKindAccounting(vault).strategyDebt().mulDiv(shares, supply);
-            for (uint256 i; i < tokens.length; ++i) {
-                amounts[i] = retainedBalance[tokens[i]].mulDiv(shares, supply);
-            }
+        result.indexPaid = shares == supply ? indexPosition : indexPosition.mulDiv(shares, supply);
+        result.debtReduction = shares == supply ? debt : debt.mulDiv(shares, supply);
+
+        for (uint256 i; i < tokens.length; ++i) {
+            uint256 balance = retainedBalance[tokens[i]];
+            amounts[i] = shares == supply ? balance : balance.mulDiv(shares, supply);
         }
         result.retainedTokens = tokens;
         result.retainedAmounts = amounts;
@@ -232,8 +227,7 @@ contract GrowthStrategy is CoreStrategy, IInKindRedemptionStrategy {
         address[] memory tokens = _retainedTokens;
         for (uint256 i; i < tokens.length; ++i) {
             uint256 exposure = _exposureBps(_valueToken(tokens[i], retainedBalance[tokens[i]]), nav);
-            if (exposure > type(uint16).max) revert RetainedAssetInvalid(tokens[i]);
-            _setTokenExposure(tokens[i], uint16(exposure));
+            _setTokenExposure(tokens[i], uint16(exposure > 65535 ? 65535 : exposure));
         }
     }
 
@@ -241,9 +235,7 @@ contract GrowthStrategy is CoreStrategy, IInKindRedemptionStrategy {
         for (uint256 i; i < result.retainedTokens.length; ++i) {
             uint256 amount = result.retainedAmounts[i];
             if (amount == 0) continue;
-            address token = result.retainedTokens[i];
-            _validateStockToken(token);
-            _transferExact(token, receiver, amount);
+            _transferExact(result.retainedTokens[i], receiver, amount);
         }
     }
 
@@ -317,8 +309,6 @@ contract GrowthStrategy is CoreStrategy, IInKindRedemptionStrategy {
             emit CoreRewardSold(token, amount, assetGain);
             return assetGain;
         }
-
-        if (config.disposition != RewardDisposition.Retain) revert InvalidRange(0, uint256(config.disposition), 2);
 
         _retainReward(token, config);
     }
