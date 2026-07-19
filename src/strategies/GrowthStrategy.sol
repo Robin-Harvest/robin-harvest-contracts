@@ -3,6 +3,7 @@ pragma solidity 0.8.25;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Constants} from "../libraries/Constants.sol";
 import {
@@ -13,12 +14,24 @@ import {
     ZeroAddress
 } from "../libraries/Errors.sol";
 import {IExecutionRouter} from "../interfaces/IExecutionRouter.sol";
+import {IInKindRedemptionStrategy} from "../interfaces/IInKindRedemptionStrategy.sol";
 import {IOracleRegistry} from "../interfaces/IOracleRegistry.sol";
 import {IRewardRegistry} from "../interfaces/IRewardRegistry.sol";
 import {IIndexFinanceCore} from "../interfaces/external/IIndexFinanceCore.sol";
 import {IStockToken} from "../interfaces/external/IStockToken.sol";
-import {CategoryPolicy, RewardCategory, RewardDisposition, RewardTokenConfig} from "../types/ProtocolTypes.sol";
+import {
+    CategoryPolicy,
+    InKindRedemptionResult,
+    RewardCategory,
+    RewardDisposition,
+    RewardTokenConfig
+} from "../types/ProtocolTypes.sol";
 import {CoreStrategy} from "./CoreStrategy.sol";
+
+interface IRobinVaultInKindAccounting {
+    function totalSupply() external view returns (uint256);
+    function strategyDebt() external view returns (uint256);
+}
 
 /// @title Robin Harvest Growth Strategy
 /// @notice rhINDEX-Growth strategy that sells SELL rewards, ignores IGNORE rewards, and retains approved stock rewards.
@@ -26,8 +39,9 @@ import {CoreStrategy} from "./CoreStrategy.sol";
 /// Retained rewards are included in NAV using validated oracle prices. The architecture also requires conservative
 /// executable quotes and haircuts; no quote or haircut algorithm is defined yet, so this phase enforces that every newly
 /// retained asset has a valid oracle and an approved liquidation route, then leaves executable-quote haircuts as a TODO.
-contract GrowthStrategy is CoreStrategy {
+contract GrowthStrategy is CoreStrategy, IInKindRedemptionStrategy {
     using Math for uint256;
+    using SafeERC20 for IERC20;
 
     mapping(address token => uint256 amount) public retainedBalance;
     mapping(address token => bool tracked) public isRetainedToken;
@@ -40,10 +54,16 @@ contract GrowthStrategy is CoreStrategy {
     event GrowthCategoryPolicyUpdated(RewardCategory indexed category, CategoryPolicy policy);
     event GrowthRebalanceMarked(RewardCategory indexed category, uint256 timestamp);
     event GrowthRetentionSkipped(address indexed token, uint256 amount, string reason);
+    event GrowthInKindRedeemed(
+        address indexed receiver, uint256 shares, uint256 indexPaid, address[] tokens, uint256[] amounts
+    );
 
     error RetainedAssetInvalid(address token);
     error RetainedAssetRouteUnavailable(address token, address adapter);
     error RetainedAssetTransfersPaused(address token);
+    error FeeOnTransferDetected(address token, uint256 expectedAmount, uint256 receivedAmount);
+    error InKindSupplyInvalid();
+    error ZeroReceiver();
 
     constructor(
         address vault_,
@@ -77,6 +97,61 @@ contract GrowthStrategy is CoreStrategy {
     /// @notice Returns the number of retained token entries.
     function retainedTokenCount() external view returns (uint256 count) {
         count = _retainedTokens.length;
+    }
+
+    /// @notice Previews the GrowthStrategy component of an in-kind redemption.
+    /// @dev Uses the vault's share supply and floor rounding for every position. Full redemption returns every remaining
+    ///      retained balance and INDEX unit, ensuring no dust is permanently stranded.
+    function previewInKindRedemption(uint256 shares)
+        external
+        view
+        override
+        returns (InKindRedemptionResult memory result)
+    {
+        uint256 supply = IRobinVaultInKindAccounting(vault).totalSupply();
+        result = _inKindRedemptionResult(shares, supply);
+    }
+
+    /// @notice Transfers the GrowthStrategy component of an in-kind redemption to a receiver.
+    /// @dev Only RobinVault may call this method. It snapshots all strategy balances before effects and external token
+    ///      transfers. Retained assets must be standard ERC-20 tokens: fee-on-transfer, rebasing, and hook-based
+    ///      behavior is unsupported unless a dedicated integration validates it.
+    function redeemInKind(uint256 shares, uint256 debtReduction, address receiver)
+        external
+        override
+        onlyVault
+        nonReentrant
+        returns (InKindRedemptionResult memory result)
+    {
+        if (receiver == address(0)) revert ZeroReceiver();
+        uint256 supplyAfterBurn = IRobinVaultInKindAccounting(vault).totalSupply();
+        uint256 supplyBefore = supplyAfterBurn + shares;
+        if (supplyBefore == 0 || shares > supplyBefore) revert InKindSupplyInvalid();
+
+        result = _inKindRedemptionResult(shares, supplyBefore);
+        result.debtReduction = debtReduction;
+        for (uint256 i; i < result.retainedTokens.length; ++i) {
+            address token = result.retainedTokens[i];
+            retainedBalance[token] -= result.retainedAmounts[i];
+        }
+        uint256 navAfterPayout = totalAssets() - result.indexPaid;
+        _refreshExposure(navAfterPayout);
+
+        uint256 indexBalanceBefore = IERC20(asset()).balanceOf(address(this));
+        uint256 deployedPaid = result.indexPaid > indexBalanceBefore ? result.indexPaid - indexBalanceBefore : 0;
+        if (deployedPaid != 0) {
+            uint256 loss = CoreStrategy._freeFunds(deployedPaid);
+            if (loss != 0) revert RetainedAssetInvalid(asset());
+        }
+
+        _transferRetainedTokens(result, receiver);
+        _transferExact(asset(), receiver, result.indexPaid);
+        if (IERC20(asset()).balanceOf(address(this)) + result.indexPaid < indexBalanceBefore) {
+            revert RetainedAssetInvalid(asset());
+        }
+
+        lastReportedAssets = totalAssets();
+        emit GrowthInKindRedeemed(receiver, shares, result.indexPaid, result.retainedTokens, result.retainedAmounts);
     }
 
     /// @notice Configures target/min/max/category exposure policy for a reward category.
@@ -123,6 +198,61 @@ contract GrowthStrategy is CoreStrategy {
     function categoryExposure(RewardCategory category) public view returns (uint256 value, uint256 exposureBps) {
         value = _categoryValue(category);
         exposureBps = _exposureBps(value, totalAssets());
+    }
+
+    function _inKindRedemptionResult(uint256 shares, uint256 supply)
+        private
+        view
+        returns (InKindRedemptionResult memory result)
+    {
+        if (supply == 0 || shares > supply) revert InKindSupplyInvalid();
+        address[] memory tokens = _retainedTokens;
+        uint256[] memory amounts = new uint256[](tokens.length);
+        uint256 indexPosition = IERC20(asset()).balanceOf(address(this)) + deployedAssets();
+
+        if (shares == supply) {
+            result.indexPaid = indexPosition;
+            result.debtReduction = IRobinVaultInKindAccounting(vault).strategyDebt();
+            for (uint256 i; i < tokens.length; ++i) {
+                amounts[i] = retainedBalance[tokens[i]];
+            }
+        } else {
+            result.indexPaid = indexPosition.mulDiv(shares, supply);
+            result.debtReduction = IRobinVaultInKindAccounting(vault).strategyDebt().mulDiv(shares, supply);
+            for (uint256 i; i < tokens.length; ++i) {
+                amounts[i] = retainedBalance[tokens[i]].mulDiv(shares, supply);
+            }
+        }
+        result.retainedTokens = tokens;
+        result.retainedAmounts = amounts;
+    }
+
+    /// @dev Synchronizes stored token exposure after retained balances change and before redemption transfers begin.
+    function _refreshExposure(uint256 nav) private {
+        address[] memory tokens = _retainedTokens;
+        for (uint256 i; i < tokens.length; ++i) {
+            uint256 exposure = _exposureBps(_valueToken(tokens[i], retainedBalance[tokens[i]]), nav);
+            if (exposure > type(uint16).max) revert RetainedAssetInvalid(tokens[i]);
+            _setTokenExposure(tokens[i], uint16(exposure));
+        }
+    }
+
+    function _transferRetainedTokens(InKindRedemptionResult memory result, address receiver) private {
+        for (uint256 i; i < result.retainedTokens.length; ++i) {
+            uint256 amount = result.retainedAmounts[i];
+            if (amount == 0) continue;
+            address token = result.retainedTokens[i];
+            _validateStockToken(token);
+            _transferExact(token, receiver, amount);
+        }
+    }
+
+    function _transferExact(address token, address receiver, uint256 amount) private {
+        if (amount == 0) return;
+        uint256 receiverBefore = IERC20(token).balanceOf(receiver);
+        IERC20(token).safeTransfer(receiver, amount);
+        uint256 received = IERC20(token).balanceOf(receiver) - receiverBefore;
+        if (received != amount) revert FeeOnTransferDetected(token, amount, received);
     }
 
     function _claimRewards() internal override {
@@ -350,9 +480,8 @@ contract GrowthStrategy is CoreStrategy {
         uint8 decimalsIn = IERC20Metadata(token).decimals();
         // slither-disable-next-line calls-loop
         uint8 decimalsOut = IERC20Metadata(asset()).decimals();
-        amount = assetValue.mulDiv(priceOut, priceIn, Math.Rounding.Ceil).mulDiv(
-            10 ** decimalsIn, 10 ** decimalsOut, Math.Rounding.Ceil
-        );
+        amount = assetValue.mulDiv(priceOut, priceIn, Math.Rounding.Ceil)
+            .mulDiv(10 ** decimalsIn, 10 ** decimalsOut, Math.Rounding.Ceil);
     }
 
     function _exposureBps(uint256 value, uint256 nav) private pure returns (uint256 exposureBps) {

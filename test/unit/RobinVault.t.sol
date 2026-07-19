@@ -8,6 +8,7 @@ import {RobinVault} from "../../src/vaults/RobinVault.sol";
 import {StrategyBase} from "../../src/strategies/StrategyBase.sol";
 import {MockINDEX} from "../mocks/MockINDEX.sol";
 import {TestStrategy} from "../helpers/TestStrategy.sol";
+import {ZeroAddress} from "../../src/libraries/Errors.sol";
 
 contract RobinVaultTest is Test {
     AccessManager internal manager;
@@ -191,6 +192,35 @@ contract RobinVaultTest is Test {
         vm.prank(user);
         vm.expectRevert(); // Should revert due to reentrancy lock on vault.withdraw
         vault.withdraw(80 ether, receiver, user);
+    }
+
+    function testRedeemInKindRevertsWithZeroShares() public {
+        vm.prank(user);
+        vm.expectRevert(RobinVault.ZeroShares.selector);
+        vault.redeemInKind(0, receiver, user);
+    }
+
+    function testRedeemInKindRevertsWithZeroReceiver() public {
+        vm.prank(user);
+        vm.expectRevert(ZeroAddress.selector);
+        vault.redeemInKind(10 ether, address(0), user);
+    }
+
+    function testRedeemInKindRevertsWhenNoStrategy() public {
+        RobinVault newVault = new RobinVault(index, "No Strategy Vault", "rhINDEX-NS", address(manager));
+        index.mint(user, 100 ether);
+        vm.startPrank(user);
+        index.approve(address(newVault), type(uint256).max);
+        newVault.deposit(10 ether, user);
+        
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                RobinVault.InKindRedemptionNotSupported.selector,
+                address(0)
+            )
+        );
+        newVault.redeemInKind(1 ether, user, user);
+        vm.stopPrank();
     }
 }
 

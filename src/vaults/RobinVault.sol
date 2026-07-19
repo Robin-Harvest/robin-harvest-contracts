@@ -16,8 +16,9 @@ import {
     ZeroAddress
 } from "../libraries/Errors.sol";
 import {IRobinStrategy} from "../interfaces/IRobinStrategy.sol";
+import {IInKindRedemptionStrategy} from "../interfaces/IInKindRedemptionStrategy.sol";
 import {IRobinVaultReport} from "../interfaces/IRobinVaultReport.sol";
-import {HarvestReport, LifecycleState} from "../types/ProtocolTypes.sol";
+import {HarvestReport, InKindRedemptionResult, LifecycleState} from "../types/ProtocolTypes.sol";
 import {ERC4626Paris} from "./ERC4626Paris.sol";
 
 /// @title Robin Harvest ERC-4626 Vault
@@ -73,10 +74,19 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events, IRo
     event IdleBufferUpdated(uint16 previousBufferBps, uint16 newBufferBps);
     event DefaultMaxLossUpdated(uint16 previousMaxLossBps, uint16 newMaxLossBps);
     event ProfitUnlockUpdated(uint256 previousDuration, uint256 newDuration);
-    event InKindRedemptionRequested(address indexed owner, address indexed receiver, uint256 shares);
+    event InKindRedeem(
+        address indexed owner,
+        address indexed receiver,
+        uint256 shares,
+        uint256 indexPaid,
+        address[] retainedTokens,
+        uint256[] retainedAmounts
+    );
 
     error CapExceeded(uint256 assetsAfterDeposit, uint256 cap);
-    error InKindRedemptionNotImplemented();
+    error InKindRedemptionNotSupported(address strategy_);
+    error InKindRedemptionMismatch();
+    error ZeroShares();
     error StrategyAlreadySet();
     error StrategyMismatch();
     error WithdrawWouldBreakEligibility(uint256 assetsAfterWithdraw, uint256 minimum);
@@ -160,19 +170,58 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events, IRo
         assets = _redeemWithMaxLoss(shares, receiver, owner, maxLossBps);
     }
 
-    /// @notice Reserved non-standard redemption surface for a later Growth implementation.
-    function previewInKindRedeem(uint256) external pure returns (address[] memory tokens, uint256[] memory amounts) {
-        tokens = new address[](0);
-        amounts = new uint256[](0);
+    /// @notice Previews the optional proportional INDEX and retained-stock payout for Growth vault shares.
+    /// @dev Every amount uses floor rounding against the current share supply, so previews never overstate a payout.
+    function previewInKindRedeem(uint256 shares) external view returns (InKindRedemptionResult memory result) {
+        IInKindRedemptionStrategy inKindStrategy = _inKindStrategy();
+        result = inKindStrategy.previewInKindRedemption(shares);
+        uint256 supply = totalSupply();
+        if (shares == supply) {
+            result.indexPaid += IERC20(asset()).balanceOf(address(this));
+        } else if (supply != 0) {
+            result.indexPaid += IERC20(asset()).balanceOf(address(this)).mulDiv(shares, supply);
+        }
     }
 
-    /// @notice Reserved non-standard redemption surface for a later Growth implementation.
+    /// @notice Redeems shares for proportional INDEX and GrowthStrategy retained assets without liquidating stocks.
+    /// @dev This explicit non-ERC-4626 extension burns shares before external transfers. The vault remains asset-agnostic:
+    ///      only the strategy selects, accounts for, and transfers retained stock tokens.
     function redeemInKind(uint256 shares, address receiver, address owner)
         external
-        returns (address[] memory, uint256[] memory)
+        nonReentrant
+        returns (InKindRedemptionResult memory result)
     {
-        emit InKindRedemptionRequested(owner, receiver, shares);
-        revert InKindRedemptionNotImplemented();
+        if (shares == 0) revert ZeroShares();
+        if (receiver == address(0)) revert ZeroAddress();
+        if (shares > maxRedeem(owner)) revert ERC4626ExceededMaxRedeem(owner, shares, maxRedeem(owner));
+
+        IInKindRedemptionStrategy inKindStrategy = _inKindStrategy();
+        uint256 supplyBefore = totalSupply();
+        uint256 vaultIndexBefore = IERC20(asset()).balanceOf(address(this));
+        uint256 debtBefore = strategyDebt;
+        uint256 lockedProfitBefore = lockedProfit;
+        InKindRedemptionResult memory preview = inKindStrategy.previewInKindRedemption(shares);
+
+        uint256 debtReduction = shares == supplyBefore ? debtBefore : debtBefore.mulDiv(shares, supplyBefore);
+        if (preview.debtReduction != debtReduction) revert InKindRedemptionMismatch();
+        uint256 vaultIndexPaid =
+            shares == supplyBefore ? vaultIndexBefore : vaultIndexBefore.mulDiv(shares, supplyBefore);
+
+        if (_msgSender() != owner) _spendAllowance(owner, _msgSender(), shares);
+        _burn(owner, shares);
+        strategyDebt = debtBefore - debtReduction;
+        lockedProfit = shares == supplyBefore ? 0 : lockedProfitBefore - lockedProfitBefore.mulDiv(shares, supplyBefore);
+        lastProfitUpdate = block.timestamp;
+        emit StrategyDebtUpdated(address(strategy), debtBefore, strategyDebt);
+
+        InKindRedemptionResult memory strategyResult = inKindStrategy.redeemInKind(shares, debtReduction, receiver);
+        if (!_sameInKindResult(preview, strategyResult)) revert InKindRedemptionMismatch();
+
+        if (vaultIndexPaid != 0) IERC20(asset()).safeTransfer(receiver, vaultIndexPaid);
+        result = strategyResult;
+        result.indexPaid += vaultIndexPaid;
+        emit InKindRedeem(owner, receiver, shares, result.indexPaid, result.retainedTokens, result.retainedAmounts);
+        _enforcePostWithdrawEligibility();
     }
 
     /// @notice Installs the sole strategy for this V1 vault.
@@ -373,6 +422,32 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events, IRo
         uint256 idle = IERC20(asset()).balanceOf(address(this));
         uint256 targetIdle = totalAssets().mulDiv(idleBufferBps, Constants.BPS);
         return idle > targetIdle ? idle - targetIdle : 0;
+    }
+
+    function _inKindStrategy() private view returns (IInKindRedemptionStrategy inKindStrategy) {
+        address strategyAddress = address(strategy);
+        if (strategyAddress == address(0)) revert InKindRedemptionNotSupported(strategyAddress);
+        inKindStrategy = IInKindRedemptionStrategy(strategyAddress);
+    }
+
+    function _sameInKindResult(InKindRedemptionResult memory expected, InKindRedemptionResult memory actual)
+        private
+        pure
+        returns (bool)
+    {
+        if (
+            expected.debtReduction != actual.debtReduction || expected.indexPaid != actual.indexPaid
+                || expected.retainedTokens.length != actual.retainedTokens.length
+                || expected.retainedAmounts.length != actual.retainedAmounts.length
+        ) return false;
+
+        for (uint256 i; i < expected.retainedTokens.length; ++i) {
+            if (
+                expected.retainedTokens[i] != actual.retainedTokens[i]
+                    || expected.retainedAmounts[i] != actual.retainedAmounts[i]
+            ) return false;
+        }
+        return true;
     }
 
     function _lockedProfitRemaining() private view returns (uint256) {

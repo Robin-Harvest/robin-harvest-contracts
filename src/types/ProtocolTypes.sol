@@ -34,6 +34,18 @@ struct HarvestReport {
     uint256 debtPayment;
 }
 
+/// @notice Deterministic payout data for an optional in-kind redemption.
+/// @param debtReduction Asset-denominated strategy debt removed by the redemption.
+/// @param indexPaid INDEX transferred from the strategy position.
+/// @param retainedTokens Retained stock tokens paid from the Growth portfolio in deterministic stored order.
+/// @param retainedAmounts Raw token amounts paired with `retainedTokens`.
+struct InKindRedemptionResult {
+    uint256 debtReduction;
+    uint256 indexPaid;
+    address[] retainedTokens;
+    uint256[] retainedAmounts;
+}
+
 /// @notice Configuration governing whether and how a reward token may be handled.
 /// @param enabled Whether the reward token is approved for processing.
 /// @param category Portfolio category assigned to the token.
