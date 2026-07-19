@@ -479,8 +479,9 @@ contract GrowthStrategy is CoreStrategy, IInKindRedemptionStrategy {
         uint8 decimalsIn = IERC20Metadata(token).decimals();
         // slither-disable-next-line calls-loop
         uint8 decimalsOut = IERC20Metadata(asset()).decimals();
-        amount = assetValue.mulDiv(priceOut, priceIn, Math.Rounding.Ceil)
-            .mulDiv(10 ** decimalsIn, 10 ** decimalsOut, Math.Rounding.Ceil);
+        amount = assetValue.mulDiv(priceOut, priceIn, Math.Rounding.Ceil).mulDiv(
+            10 ** decimalsIn, 10 ** decimalsOut, Math.Rounding.Ceil
+        );
     }
 
     function _exposureBps(uint256 value, uint256 nav) private pure returns (uint256 exposureBps) {

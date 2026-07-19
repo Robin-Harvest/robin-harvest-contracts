@@ -20,7 +20,10 @@ interface IExecutionRouter {
     /// @param adapter Approved execution adapter.
     /// @param tokenIn Token sold.
     /// @param tokenOut Token bought.
-    function isRouteApproved(address adapter, address tokenIn, address tokenOut) external view returns (bool approved);
+    function isRouteApproved(address adapter, address tokenIn, address tokenOut)
+        external
+        view
+        returns (bool approved);
 
     /// @notice Updates whether an adapter may receive constrained swap requests.
     /// @param adapter Adapter address to update.
