@@ -933,11 +933,81 @@ contract GrowthStrategyTest is Test {
         assertApproxEqAbs(preTotalNav, postTotalNav + totalRedeemedValue, 10);
     }
 
+
+    function testCategoryRetentionSplitBelowTargetRetainsMax() public {
+        vm.startPrank(governance);
+        strategy.setCategoryPolicy(
+            RewardCategory.Equity,
+            CategoryPolicy({
+                targetRetainBps: 5_000,
+                minRetainBps: 2_000,
+                maxRetainBps: 8_000,
+                maxPortfolioBps: 10_000,
+                rebalanceCooldown: 1 days
+            })
+        );
+        vm.stopPrank();
+
+        _depositAndDeploy(1_000 ether);
+        _accrueReward(retainStock, 100 ether);
+        vm.prank(governance);
+        strategy.harvest();
+
+        // Category exposure is 0 before first retention => below target => maxRetainBps (8000) applies.
+        // 80% of 100 ether = 80 ether retained, 20 ether sold.
+        uint256 retained = strategy.retainedBalance(address(retainStock));
+        assertEq(retained, 80 ether);
+    }
+
+    function testLiquidationOrderIsHonored() public {
+        MockStockToken secondStock = new MockStockToken("Mock Tesla", "mTSLA", 18);
+        MockOracle secondFeed = new MockOracle(8, 1e8);
+
+        vm.startPrank(governance);
+        oracleRegistry.setOracleConfig(address(secondStock), _oracleConfig(address(secondFeed), false));
+        router.setRoute(address(dex), address(secondStock), address(index), true, 500);
+        rewardRegistry.setAdapterApproval(address(secondStock), address(dex), true);
+        rewardRegistry.setRewardTokenConfig(
+            address(secondStock), _rewardConfig(RewardDisposition.Retain, address(secondFeed), 0)
+        );
+        strategy.addRewardToken(address(secondStock));
+        address[] memory order = new address[](2);
+        order[0] = address(secondStock);
+        order[1] = address(retainStock);
+        strategy.setLiquidationOrder(order);
+        vm.stopPrank();
+
+        dex.setRate(address(secondStock), address(index), 1e18);
+        secondStock.mint(address(dex), 1_000_000 ether);
+
+        _depositAndDeploy(1_000 ether);
+        _accrueReward(retainStock, 100 ether);
+        _accrueReward(secondStock, 100 ether);
+        vm.prank(governance);
+        strategy.harvest();
+
+        // Slash the Index Finance position so deployed INDEX cannot fully cover the withdrawal,
+        // forcing the strategy to liquidate retained assets in governance-approved order.
+        indexFinance.slash(address(strategy), 900 ether);
+
+        vm.warp(block.timestamp + vault.profitMaxUnlockTime());
+        _refreshOracles();
+        secondFeed.setRoundData(
+            secondFeed.roundId() + 1, 1e8, block.timestamp, block.timestamp, secondFeed.roundId() + 1
+        );
+
+        vm.prank(user);
+        vault.withdraw(150 ether, user, user, 500);
+
+        assertLt(secondStock.balanceOf(address(strategy)), 100 ether);
+        assertEq(retainStock.balanceOf(address(strategy)), 100 ether);
+    }
+
     function _policy(uint16 maxPortfolioBps) private pure returns (CategoryPolicy memory policy) {
         policy = CategoryPolicy({
-            targetRetainBps: maxPortfolioBps,
-            minRetainBps: 0,
-            maxRetainBps: maxPortfolioBps,
+            targetRetainBps: 10_000,
+            minRetainBps: 10_000,
+            maxRetainBps: 10_000,
             maxPortfolioBps: maxPortfolioBps,
             rebalanceCooldown: 1 days
         });

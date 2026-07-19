@@ -2,10 +2,15 @@
 pragma solidity 0.8.25;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {MockINDEX} from "../mocks/MockINDEX.sol";
 import {StrategyBase} from "../../src/strategies/StrategyBase.sol";
+import {IRobinVaultReport} from "../../src/interfaces/IRobinVaultReport.sol";
+import {HarvestReport} from "../../src/types/ProtocolTypes.sol";
 
 contract TestStrategy is StrategyBase {
+    using SafeERC20 for IERC20;
+
     uint256 public deployedAssets;
     uint256 public nextLoss;
     mapping(address token => bool shouldFail) public rewardShouldFail;
@@ -22,6 +27,26 @@ contract TestStrategy is StrategyBase {
 
     function setRewardShouldFail(address token, bool shouldFail) external {
         rewardShouldFail[token] = shouldFail;
+    }
+
+    function reportGain(uint256 gain) external {
+        MockINDEX(asset()).mint(address(this), gain);
+        IERC20(asset()).safeTransfer(vault, gain);
+        IRobinVaultReport(vault).report(HarvestReport({gain: gain, loss: 0, debtPayment: gain}));
+        lastReportedAssets = totalAssets();
+    }
+
+    function reportGainToDebt(uint256 gain) external {
+        deployedAssets += gain;
+        IRobinVaultReport(vault).report(HarvestReport({gain: gain, loss: 0, debtPayment: 0}));
+        lastReportedAssets = totalAssets();
+    }
+
+    function reportLoss(uint256 loss) external {
+        if (loss > deployedAssets) loss = deployedAssets;
+        deployedAssets -= loss;
+        IRobinVaultReport(vault).report(HarvestReport({gain: 0, loss: loss, debtPayment: 0}));
+        lastReportedAssets = totalAssets();
     }
 
     function _deployFunds(uint256 amount) internal override {

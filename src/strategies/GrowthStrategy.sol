@@ -14,6 +14,7 @@ import {
     ZeroAddress
 } from "../libraries/Errors.sol";
 import {IExecutionRouter} from "../interfaces/IExecutionRouter.sol";
+import {IDexAdapter} from "../interfaces/IDexAdapter.sol";
 import {IInKindRedemptionStrategy} from "../interfaces/IInKindRedemptionStrategy.sol";
 import {IOracleRegistry} from "../interfaces/IOracleRegistry.sol";
 import {IRewardRegistry} from "../interfaces/IRewardRegistry.sol";
@@ -36,9 +37,8 @@ interface IRobinVaultInKindAccounting {
 /// @title Robin Harvest Growth Strategy
 /// @notice rhINDEX-Growth strategy that sells SELL rewards, ignores IGNORE rewards, and retains approved stock rewards.
 /// @dev Growth extends Core's Index Finance deployment, withdrawal, reward selling, min-output, and reporting behavior.
-/// Retained rewards are included in NAV using validated oracle prices. The architecture also requires conservative
-/// executable quotes and haircuts; no quote or haircut algorithm is defined yet, so this phase enforces that every newly
-/// retained asset has a valid oracle and an approved liquidation route, then leaves executable-quote haircuts as a TODO.
+/// Retained rewards are included in NAV using validated oracle prices discounted by conservative executable quotes and
+/// configurable haircuts. Every newly retained asset must have a valid oracle and an approved liquidation route.
 contract GrowthStrategy is CoreStrategy, IInKindRedemptionStrategy {
     using Math for uint256;
     using SafeERC20 for IERC20;
@@ -48,12 +48,21 @@ contract GrowthStrategy is CoreStrategy, IInKindRedemptionStrategy {
     mapping(RewardCategory category => CategoryPolicy policy) public categoryPolicies;
     mapping(RewardCategory category => uint256 timestamp) public lastRebalanceAt;
 
+    /// @notice Governance-approved liquidation order used during INDEX-only withdrawals.
+    address[] private _liquidationOrder;
+
+    /// @notice Additional NAV haircut applied after min(oracle, executable quote) valuation.
+    uint16 public navHaircutBps;
+
     address[] private _retainedTokens;
 
     event GrowthRewardRetained(address indexed token, RewardCategory indexed category, uint256 amount, uint256 value);
     event GrowthCategoryPolicyUpdated(RewardCategory indexed category, CategoryPolicy policy);
     event GrowthRebalanceMarked(RewardCategory indexed category, uint256 timestamp);
     event GrowthRetentionSkipped(address indexed token, uint256 amount, string reason);
+    event GrowthRetentionSplit(address indexed token, uint256 retainedAmount, uint256 soldAmount, uint16 retainBps);
+    event LiquidationOrderUpdated(address[] tokens);
+    event NavHaircutUpdated(uint16 previousHaircutBps, uint16 newHaircutBps);
     event GrowthInKindRedeemed(
         address indexed receiver, uint256 shares, uint256 indexPaid, address[] tokens, uint256[] amounts
     );
@@ -88,6 +97,11 @@ contract GrowthStrategy is CoreStrategy, IInKindRedemptionStrategy {
             swapDeadlineDelay_
         )
     {}
+
+    /// @notice Returns the governance-approved liquidation order, or insertion order when unset.
+    function liquidationOrder() external view returns (address[] memory tokens) {
+        tokens = _liquidationOrder.length == 0 ? _retainedTokens : _liquidationOrder;
+    }
 
     /// @notice Returns the retained reward tokens included in portfolio NAV.
     function retainedTokens() external view returns (address[] memory tokens) {
@@ -172,9 +186,27 @@ contract GrowthStrategy is CoreStrategy, IInKindRedemptionStrategy {
         emit GrowthCategoryPolicyUpdated(category, policy);
     }
 
+    /// @notice Sets the governance-approved liquidation order for INDEX-only withdrawals.
+    /// @dev When unset, retained tokens are liquidated in insertion order.
+    function setLiquidationOrder(address[] calldata tokens) external restricted {
+        delete _liquidationOrder;
+        for (uint256 i; i < tokens.length; ++i) {
+            if (tokens[i] == address(0)) revert ZeroAddress();
+            _liquidationOrder.push(tokens[i]);
+        }
+        emit LiquidationOrderUpdated(tokens);
+    }
+
+    /// @notice Sets the additional NAV haircut applied after min(oracle, executable quote) valuation.
+    function setNavHaircutBps(uint16 newHaircutBps) external restricted {
+        if (newHaircutBps > Constants.MAX_BPS) revert InvalidBasisPoints(newHaircutBps);
+        emit NavHaircutUpdated(navHaircutBps, newHaircutBps);
+        navHaircutBps = newHaircutBps;
+    }
+
     /// @notice Records a rebalance checkpoint for a category after the configured cooldown.
-    /// @dev TODO(PHASE-13-REBALANCE): Implement deterministic rebalance execution once the architecture defines the
-    /// allocation algorithm, executable quote source, and haircut parameters. This hook only records cadence.
+    /// @dev Rebalance execution remains policy-driven through harvest retention bands and liquidation order. This hook
+    /// records cadence only until a dedicated rebalance algorithm is approved.
     function markRebalance(RewardCategory category) external restricted {
         CategoryPolicy memory policy = categoryPolicies[category];
         uint256 previous = lastRebalanceAt[category];
@@ -319,12 +351,21 @@ contract GrowthStrategy is CoreStrategy, IInKindRedemptionStrategy {
             return assetGain;
         }
 
-        _retainReward(token, config);
+        uint16 retainBps = _computeRetainBps(config.category);
+        uint256 retainAmount = processAmount.mulDiv(retainBps, Constants.BPS);
+        uint256 sellAmount = processAmount - retainAmount;
+        if (sellAmount != 0) {
+            // slither-disable-next-line reentrancy-benign,reentrancy-events
+            assetGain = _sellReward(token, sellAmount, config.adapter);
+            emit CoreRewardSold(token, sellAmount, assetGain);
+        }
+        if (retainAmount != 0) {
+            _retainRewardAmount(token, config, retainAmount);
+        }
+        emit GrowthRetentionSplit(token, retainAmount, sellAmount, retainBps);
     }
 
-    /// @dev Frees deployed INDEX first, then liquidates retained assets only if INDEX remains insufficient.
-    /// TODO(PHASE-12-LIQUIDATION-ORDER): Replace insertion-order liquidation with the governance-approved liquidation
-    /// order once the architecture defines its storage and update rules.
+    /// @dev Frees deployed INDEX first, then liquidates retained assets in governance order when INDEX is insufficient.
     // Justification: Reentrancy is prevented because withdraw/redeem are protected by nonReentrant in the vault,
     // and freeFunds is only callable by the vault and protected by nonReentrant in StrategyBase.
     // slither-disable-next-line reentrancy-no-eth,reentrancy-benign,reentrancy-events
@@ -336,7 +377,7 @@ contract GrowthStrategy is CoreStrategy, IInKindRedemptionStrategy {
         if (available >= amount) return loss;
 
         uint256 remaining = amount - available;
-        address[] memory tokens = _retainedTokens;
+        address[] memory tokens = _liquidationOrder.length == 0 ? _retainedTokens : _liquidationOrder;
         // Justification: Bounded loop of retained tokens is safe.
         // slither-disable-next-line calls-loop
         for (uint256 i; i < tokens.length && remaining != 0; ++i) {
@@ -373,7 +414,18 @@ contract GrowthStrategy is CoreStrategy, IInKindRedemptionStrategy {
         value = _portfolioValue();
     }
 
-    function _retainReward(address token, RewardTokenConfig memory config) private {
+    /// @dev Computes the deterministic retain percentage for a reward category.
+    function _computeRetainBps(RewardCategory category) private view returns (uint16 retainBps) {
+        CategoryPolicy memory policy = categoryPolicies[category];
+        if (policy.maxRetainBps == 0) return Constants.MAX_BPS;
+
+        (, uint256 currentCategoryBps) = categoryExposure(category);
+        if (currentCategoryBps < policy.targetRetainBps) return policy.maxRetainBps;
+        if (currentCategoryBps > policy.targetRetainBps) return policy.minRetainBps;
+        return policy.targetRetainBps;
+    }
+
+    function _retainRewardAmount(address token, RewardTokenConfig memory config, uint256 amount) private {
         if (!config.retainable || config.oracle == address(0)) revert RetainedAssetInvalid(token);
         if (config.adapter == address(0)) revert ZeroAddress();
         if (!executionRouter.isRouteApproved(config.adapter, token, asset())) {
@@ -381,7 +433,6 @@ contract GrowthStrategy is CoreStrategy, IInKindRedemptionStrategy {
         }
         _validateStockToken(token);
 
-        uint256 amount = IERC20(token).balanceOf(address(this));
         uint256 value = _valueToken(token, amount);
         // Justification: value == 0 checks if the token has non-zero oracle value before retention.
         // slither-disable-next-line incorrect-equality
@@ -391,9 +442,9 @@ contract GrowthStrategy is CoreStrategy, IInKindRedemptionStrategy {
             isRetainedToken[token] = true;
             _retainedTokens.push(token);
         }
-        retainedBalance[token] = amount;
+        retainedBalance[token] += amount;
 
-        _enforceExposure(token, config, value);
+        _enforceExposure(token, config, _valueToken(token, retainedBalance[token]));
         emit GrowthRewardRetained(token, config.category, amount, value);
     }
 
@@ -452,6 +503,14 @@ contract GrowthStrategy is CoreStrategy, IInKindRedemptionStrategy {
         // Justification: amount == 0 check is an early return check.
         // slither-disable-next-line incorrect-equality
         if (amount == 0) return 0;
+
+        value = _oracleValue(token, amount);
+        uint256 quoteValue = _quoteValue(token, amount);
+        if (quoteValue != 0 && quoteValue < value) value = quoteValue;
+        if (navHaircutBps != 0) value = value.mulDiv(Constants.BPS - navHaircutBps, Constants.BPS);
+    }
+
+    function _oracleValue(address token, uint256 amount) private view returns (uint256 value) {
         // Justification: updatedAt is validated inside the OracleRegistry; the strategy does not re-check it.
         // slither-disable-next-line unused-return,calls-loop
         (uint256 priceIn,) = oracleRegistry.getValidatedPrice(token);
@@ -463,6 +522,15 @@ contract GrowthStrategy is CoreStrategy, IInKindRedemptionStrategy {
         // slither-disable-next-line calls-loop
         uint8 decimalsOut = IERC20Metadata(asset()).decimals();
         value = amount.mulDiv(priceIn, priceOut).mulDiv(10 ** decimalsOut, 10 ** decimalsIn);
+    }
+
+    function _quoteValue(address token, uint256 amount) private view returns (uint256 value) {
+        RewardTokenConfig memory config = rewardRegistry.getRewardTokenConfig(token);
+        if (config.adapter == address(0)) return 0;
+        if (!executionRouter.isRouteApproved(config.adapter, token, asset())) return 0;
+        // slither-disable-next-line calls-loop
+        uint256 amountOut = IDexAdapter(config.adapter).quoteExactInput(token, asset(), amount);
+        return amountOut;
     }
 
     function _tokenAmountForAssetValue(address token, uint256 assetValue) private view returns (uint256 amount) {

@@ -119,3 +119,17 @@ struct FeeConfig {
     uint16 performanceBps;
     uint16 managementBps;
 }
+
+/// @notice Conservative NAV haircut applied after min(oracle, executable quote) valuation.
+/// @param navHaircutBps Additional haircut applied to retained-asset NAV.
+struct NavHaircutConfig {
+    uint16 navHaircutBps;
+}
+
+/// @notice Timelocked strategy replacement proposal.
+/// @param newStrategy Candidate strategy awaiting activation.
+/// @param executableAt Earliest timestamp when the migration may execute.
+struct PendingStrategyMigration {
+    address newStrategy;
+    uint256 executableAt;
+}

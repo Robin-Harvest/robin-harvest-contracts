@@ -6,9 +6,10 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {AccessManager} from "../../src/access/AccessManager.sol";
 import {RobinVault} from "../../src/vaults/RobinVault.sol";
 import {StrategyBase} from "../../src/strategies/StrategyBase.sol";
+import {Events} from "../../src/libraries/Events.sol";
+import {CooldownActive, ZeroAddress} from "../../src/libraries/Errors.sol";
 import {MockINDEX} from "../mocks/MockINDEX.sol";
 import {TestStrategy} from "../helpers/TestStrategy.sol";
-import {ZeroAddress} from "../../src/libraries/Errors.sol";
 
 contract RobinVaultTest is Test {
     AccessManager internal manager;
@@ -169,29 +170,35 @@ contract RobinVaultTest is Test {
     }
 
     function testVaultStrategyReentrancyPrevention() public {
-        ReenteringStrategy reentrantStrategy = new ReenteringStrategy(address(vault), index, address(manager));
+        // Use a dedicated vault so we can call setStrategy (the main vault already has one).
+        RobinVault reentrancyVault = new RobinVault(index, "Reentrancy Vault", "rhRE", address(manager));
+        ReenteringStrategy reentrantStrategy =
+            new ReenteringStrategy(address(reentrancyVault), index, address(manager));
 
         vm.prank(governance);
-        vault.setStrategy(address(reentrantStrategy));
+        reentrancyVault.setStrategy(address(reentrantStrategy));
 
-        vm.prank(user);
-        vault.deposit(100 ether, user);
+        index.mint(user, 200 ether);
+        vm.startPrank(user);
+        index.approve(address(reentrancyVault), type(uint256).max);
+        reentrancyVault.deposit(100 ether, user);
+        vm.stopPrank();
 
         // 1. Test reentrancy during deploy
         reentrantStrategy.setReenterDeploy(true);
         vm.prank(governance);
         vm.expectRevert(); // Should revert due to reentrancy lock on vault.deploy
-        vault.deploy(50 ether);
+        reentrancyVault.deploy(50 ether);
 
         // 2. Test reentrancy during withdraw (which triggers freeFunds)
         reentrantStrategy.setReenterDeploy(false);
         vm.prank(governance);
-        vault.deploy(50 ether); // Success deploy first
+        reentrancyVault.deploy(50 ether); // Success deploy first
 
         reentrantStrategy.setReenterFree(true);
         vm.prank(user);
         vm.expectRevert(); // Should revert due to reentrancy lock on vault.withdraw
-        vault.withdraw(80 ether, receiver, user);
+        reentrancyVault.withdraw(80 ether, receiver, user);
     }
 
     function testRedeemInKindRevertsWithZeroShares() public {
@@ -216,6 +223,31 @@ contract RobinVaultTest is Test {
         vm.expectRevert(abi.encodeWithSelector(RobinVault.InKindRedemptionNotSupported.selector, address(0)));
         newVault.redeemInKind(1 ether, user, user);
         vm.stopPrank();
+    }
+
+    function testEligibilityEventEmitsOnThresholdCrossing() public {
+        vm.prank(governance);
+        vault.setEligibilityThreshold(500 ether);
+
+        vm.expectEmit(true, false, false, true);
+        emit Events.EligibilityStatusChanged(address(vault), true, 500 ether, 500 ether);
+        vm.prank(user);
+        vault.deposit(500 ether, user);
+    }
+
+    function testStrategyMigrationRequiresTimelock() public {
+        TestStrategy replacement = new TestStrategy(address(vault), index, address(manager));
+
+        vm.startPrank(governance);
+        vault.setStrategyMigrationDelay(1 days);
+        vault.proposeStrategyMigration(address(replacement));
+        vm.expectRevert(abi.encodeWithSelector(CooldownActive.selector, block.timestamp + 1 days));
+        vault.executeStrategyMigration();
+        vm.warp(block.timestamp + 1 days);
+        vault.executeStrategyMigration();
+        vm.stopPrank();
+
+        assertEq(address(vault.strategy()), address(replacement));
     }
 }
 

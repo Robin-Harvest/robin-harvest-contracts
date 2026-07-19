@@ -39,4 +39,15 @@ contract MockDex is IDexAdapter {
         IERC20(tokenIn).safeTransferFrom(msg.sender, address(this), amountIn);
         IERC20(tokenOut).safeTransfer(recipient, amountOut);
     }
+
+    function quoteExactInput(address tokenIn, address tokenOut, uint256 amountIn)
+        external
+        view
+        override
+        returns (uint256 amountOut)
+    {
+        uint256 routeRate = rate[tokenIn][tokenOut];
+        if (routeRate == 0) return 0;
+        amountOut = amountIn * routeRate / RATE_SCALE;
+    }
 }

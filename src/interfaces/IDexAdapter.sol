@@ -20,4 +20,11 @@ interface IDexAdapter {
         address recipient,
         uint48 deadline
     ) external returns (uint256 amountOut);
+
+    /// @notice Returns a conservative executable output quote for NAV and retention bounds.
+    /// @dev Implementations must not mutate state. A zero quote means no reliable on-chain quote exists.
+    function quoteExactInput(address tokenIn, address tokenOut, uint256 amountIn)
+        external
+        view
+        returns (uint256 amountOut);
 }

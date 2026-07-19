@@ -9,6 +9,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Constants} from "../libraries/Constants.sol";
 import {Events} from "../libraries/Events.sol";
 import {
+    CooldownActive,
     InvalidAccounting,
     InvalidBasisPoints,
     InvalidLifecycleState,
@@ -16,9 +17,10 @@ import {
     ZeroAddress
 } from "../libraries/Errors.sol";
 import {IRobinStrategy} from "../interfaces/IRobinStrategy.sol";
+import {IRobinAccountant} from "../interfaces/IRobinAccountant.sol";
 import {IInKindRedemptionStrategy} from "../interfaces/IInKindRedemptionStrategy.sol";
 import {IRobinVaultReport} from "../interfaces/IRobinVaultReport.sol";
-import {HarvestReport, InKindRedemptionResult, LifecycleState} from "../types/ProtocolTypes.sol";
+import {HarvestReport, InKindRedemptionResult, LifecycleState, PendingStrategyMigration} from "../types/ProtocolTypes.sol";
 import {ERC4626Paris} from "./ERC4626Paris.sol";
 
 /// @title Robin Harvest ERC-4626 Vault
@@ -27,7 +29,7 @@ import {ERC4626Paris} from "./ERC4626Paris.sol";
 /// - Share conversion delegates to OpenZeppelin ERC-4626 and uses a positive decimals offset for virtual shares.
 /// - `totalAssets()` excludes still-locked profit, reducing harvest sandwich incentives.
 /// - Strategy withdrawals are bounded by caller-selected or governance-default max loss.
-/// - In-kind redemption is intentionally only a reserved hook until the later Growth phases.
+/// - In-kind redemption is an explicit Growth extension coordinated through the strategy boundary.
 contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events, IRobinVaultReport {
     using SafeERC20 for IERC20;
     using Math for uint256;
@@ -68,7 +70,23 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events, IRo
     /// @notice Optional minimum total assets required after user withdrawals.
     uint256 public minPostWithdrawAssets;
 
+    /// @notice Optional fee accountant authorized to assess report-time fees.
+    IRobinAccountant public accountant;
+
+    /// @notice Mandatory delay before a proposed strategy migration may execute.
+    uint256 public strategyMigrationDelay;
+
+    /// @notice Timelocked strategy replacement awaiting activation.
+    PendingStrategyMigration public pendingMigration;
+
+    /// @notice Last observed eligibility state used for event emission.
+    bool private _lastEligible;
+
     event StrategyUpdated(address indexed previousStrategy, address indexed newStrategy);
+    event StrategyMigrationProposed(address indexed newStrategy, uint256 executableAt);
+    event StrategyMigrationCancelled(address indexed cancelledStrategy);
+    event AccountantUpdated(address indexed previousAccountant, address indexed newAccountant);
+    event ProtocolFeesCollected(address indexed recipient, uint256 performanceFee, uint256 managementFee);
     event StrategyDebtUpdated(address indexed strategy, uint256 previousDebt, uint256 newDebt);
     event DepositCapUpdated(uint256 previousCap, uint256 newCap);
     event IdleBufferUpdated(uint16 previousBufferBps, uint16 newBufferBps);
@@ -89,6 +107,7 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events, IRo
     error ZeroShares();
     error StrategyAlreadySet();
     error StrategyMismatch();
+    error StrategyMigrationPending();
     error WithdrawWouldBreakEligibility(uint256 assetsAfterWithdraw, uint256 minimum);
 
     constructor(IERC20 asset_, string memory name_, string memory symbol_, address authority_)
@@ -101,6 +120,7 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events, IRo
         defaultMaxLossBps = 50;
         profitMaxUnlockTime = DEFAULT_PROFIT_MAX_UNLOCK_TIME;
         lastProfitUpdate = block.timestamp;
+        _lastEligible = true;
     }
 
     /// @notice Returns total managed assets, excluding still-locked profit.
@@ -128,10 +148,12 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events, IRo
 
     function deposit(uint256 assets, address receiver) public override nonReentrant returns (uint256 shares) {
         shares = super.deposit(assets, receiver);
+        _updateEligibilityTracking();
     }
 
     function mint(uint256 shares, address receiver) public override nonReentrant returns (uint256 assets) {
         assets = super.mint(shares, receiver);
+        _updateEligibilityTracking();
     }
 
     function withdraw(uint256 assets, address receiver, address owner)
@@ -228,21 +250,59 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events, IRo
         result.indexPaid += vaultIndexPaid;
         emit InKindRedeem(owner, receiver, shares, result.indexPaid, result.retainedTokens, result.retainedAmounts);
         _enforcePostWithdrawEligibility();
+        _updateEligibilityTracking();
     }
 
-    /// @notice Installs the sole strategy for this V1 vault.
+    /// @notice Installs the sole strategy for this V1 vault when no strategy is active.
     // Justification: Checks strategyDebt, which can be tainted by block.timestamp via profit reports.
     // However, this comparison does not rely on or check time.
     // slither-disable-next-line timestamp
     function setStrategy(address newStrategy) external restricted {
         if (newStrategy == address(0)) revert ZeroAddress();
-        if (address(strategy) != address(0) && strategyDebt != 0) revert StrategyAlreadySet();
-        if (IRobinStrategy(newStrategy).vault() != address(this) || IRobinStrategy(newStrategy).asset() != asset()) {
-            revert StrategyMismatch();
-        }
-        address previousStrategy = address(strategy);
+        if (address(strategy) != address(0)) revert StrategyAlreadySet();
+        _validateStrategy(newStrategy);
         strategy = IRobinStrategy(newStrategy);
-        emit StrategyUpdated(previousStrategy, newStrategy);
+        emit StrategyUpdated(address(0), newStrategy);
+    }
+
+    /// @notice Sets the mandatory delay before a proposed strategy migration may execute.
+    function setStrategyMigrationDelay(uint256 newDelay) external restricted {
+        strategyMigrationDelay = newDelay;
+    }
+
+    /// @notice Proposes a timelocked strategy migration.
+    function proposeStrategyMigration(address newStrategy) external restricted {
+        if (strategyDebt != 0) revert StrategyAlreadySet();
+        _validateStrategy(newStrategy);
+        pendingMigration = PendingStrategyMigration(newStrategy, block.timestamp + strategyMigrationDelay);
+        emit StrategyMigrationProposed(newStrategy, pendingMigration.executableAt);
+    }
+
+    /// @notice Executes a previously proposed strategy migration after the timelock elapses.
+    function executeStrategyMigration() external restricted {
+        PendingStrategyMigration memory pending = pendingMigration;
+        if (pending.newStrategy == address(0)) revert ZeroAddress();
+        if (block.timestamp < pending.executableAt) revert CooldownActive(pending.executableAt);
+        if (strategyDebt != 0) revert StrategyAlreadySet();
+
+        address previousStrategy = address(strategy);
+        strategy = IRobinStrategy(pending.newStrategy);
+        delete pendingMigration;
+        emit StrategyUpdated(previousStrategy, pending.newStrategy);
+    }
+
+    /// @notice Cancels a pending strategy migration proposal.
+    function cancelStrategyMigration() external restricted {
+        address cancelled = pendingMigration.newStrategy;
+        if (cancelled == address(0)) revert ZeroAddress();
+        delete pendingMigration;
+        emit StrategyMigrationCancelled(cancelled);
+    }
+
+    /// @notice Sets the optional fee accountant authorized to assess report-time fees.
+    function setAccountant(address newAccountant) external restricted {
+        emit AccountantUpdated(address(accountant), newAccountant);
+        accountant = IRobinAccountant(newAccountant);
     }
 
     function setDepositCap(uint256 newCap) external restricted {
@@ -271,6 +331,7 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events, IRo
     function setEligibilityThreshold(uint256 newThreshold) external restricted {
         emit EligibilityThresholdUpdated(eligibilityThreshold, newThreshold);
         eligibilityThreshold = newThreshold;
+        _updateEligibilityTracking();
     }
 
     function setMinPostWithdrawAssets(uint256 newMinimum) external restricted {
@@ -318,8 +379,12 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events, IRo
         lockedProfit += report_.gain;
         lastProfitUpdate = block.timestamp;
 
+        uint256 grossAssets = IERC20(asset()).balanceOf(address(this)) + strategyDebt;
+        _assessReportFees(grossAssets, report_.gain);
+
         emit StrategyReported(msg.sender, report_.gain, report_.loss, report_.debtPayment);
         emit StrategyDebtUpdated(msg.sender, previousDebt, newDebt);
+        _updateEligibilityTracking();
     }
 
     // Justification: qualifyingBalance uses totalAssets() which is tainted by block.timestamp.
@@ -365,6 +430,7 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events, IRo
         _ensureLiquidity(assets, maxLossBps);
         super._withdraw(caller, receiver, owner, assets, shares);
         _enforcePostWithdrawEligibility();
+        _updateEligibilityTracking();
     }
 
     // Justification: Tainted by strategyDebt. But it does not rely on or check time.
@@ -491,6 +557,38 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events, IRo
         }
         lifecycleState = newState;
         emit LifecycleStateChanged(previousState, newState);
+    }
+
+    function _validateStrategy(address newStrategy) private view {
+        if (IRobinStrategy(newStrategy).vault() != address(this) || IRobinStrategy(newStrategy).asset() != asset()) {
+            revert StrategyMismatch();
+        }
+    }
+
+    function _assessReportFees(uint256 grossAssets, uint256 reportedGain) private {
+        IRobinAccountant currentAccountant = accountant;
+        if (address(currentAccountant) == address(0)) return;
+
+        (uint256 performanceFee, uint256 managementFee) =
+            currentAccountant.assessReportFees(grossAssets, reportedGain);
+        uint256 totalFee = performanceFee + managementFee;
+        if (totalFee == 0) return;
+
+        if (totalFee > lockedProfit) revert InvalidAccounting();
+        lockedProfit -= totalFee;
+
+        address recipient = currentAccountant.feeRecipient();
+        if (recipient == address(0)) revert ZeroAddress();
+        IERC20(asset()).safeTransfer(recipient, totalFee);
+        emit ProtocolFeesCollected(recipient, performanceFee, managementFee);
+    }
+
+    function _updateEligibilityTracking() private {
+        (bool eligible, uint256 qualifyingBalance, uint256 threshold) = isEligible();
+        if (eligible != _lastEligible) {
+            _lastEligible = eligible;
+            emit EligibilityStatusChanged(address(this), eligible, qualifyingBalance, threshold);
+        }
     }
 
     function _decimalsOffset() internal pure override returns (uint8) {
