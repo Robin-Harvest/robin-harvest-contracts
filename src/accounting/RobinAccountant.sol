@@ -49,6 +49,7 @@ contract RobinAccountant is AccessManaged {
 
     /// @notice Authorizes the vault that may request fee assessments.
     function setVault(address vault_) external restricted {
+        if (vault_ == address(0)) revert ZeroAddress();
         emit VaultUpdated(vault, vault_);
         vault = vault_;
     }

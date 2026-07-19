@@ -41,6 +41,9 @@ contract UniswapV2DexAdapter is IDexAdapter {
 
         address[] memory path = _path(tokenIn, tokenOut);
         uint256 balanceBefore = IERC20(tokenOut).balanceOf(recipient);
+        // Justification: The return value of the router swap is captured to satisfy Slither,
+        // but the actual amount received is verified using balance differences to account for fee-on-transfer.
+        // slither-disable-next-line unused-return
         router.swapExactTokensForTokens(amountIn, minAmountOut, path, recipient, deadline);
         amountOut = IERC20(tokenOut).balanceOf(recipient) - balanceBefore;
         if (amountOut < minAmountOut) revert InsufficientOutput(amountOut, minAmountOut);

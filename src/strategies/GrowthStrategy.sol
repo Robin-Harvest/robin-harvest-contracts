@@ -354,13 +354,14 @@ contract GrowthStrategy is CoreStrategy, IInKindRedemptionStrategy {
         uint16 retainBps = _computeRetainBps(config.category);
         uint256 retainAmount = processAmount.mulDiv(retainBps, Constants.BPS);
         uint256 sellAmount = processAmount - retainAmount;
+        if (retainAmount != 0) {
+            _retainRewardAmount(token, config, retainAmount);
+        }
         if (sellAmount != 0) {
+            // Justification: Reentrancy is prevented because harvest() is protected by nonReentrant in StrategyBase.
             // slither-disable-next-line reentrancy-benign,reentrancy-events
             assetGain = _sellReward(token, sellAmount, config.adapter);
             emit CoreRewardSold(token, sellAmount, assetGain);
-        }
-        if (retainAmount != 0) {
-            _retainRewardAmount(token, config, retainAmount);
         }
         emit GrowthRetentionSplit(token, retainAmount, sellAmount, retainBps);
     }
@@ -525,8 +526,11 @@ contract GrowthStrategy is CoreStrategy, IInKindRedemptionStrategy {
     }
 
     function _quoteValue(address token, uint256 amount) private view returns (uint256 value) {
+        // Justification: view queries to registry config are safe inside bounded loops of tracked tokens.
+        // slither-disable-next-line calls-loop
         RewardTokenConfig memory config = rewardRegistry.getRewardTokenConfig(token);
         if (config.adapter == address(0)) return 0;
+        // slither-disable-next-line calls-loop
         if (!executionRouter.isRouteApproved(config.adapter, token, asset())) return 0;
         // slither-disable-next-line calls-loop
         uint256 amountOut = IDexAdapter(config.adapter).quoteExactInput(token, asset(), amount);

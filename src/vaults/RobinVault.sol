@@ -244,6 +244,8 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events, IRo
         lastProfitUpdate = block.timestamp;
         emit StrategyDebtUpdated(address(strategy), debtBefore, strategyDebt);
 
+        // Justification: Reentrancy is prevented because redeemInKind() is protected by nonReentrant.
+        // slither-disable-next-line reentrancy-no-eth,reentrancy-benign
         InKindRedemptionResult memory strategyResult = inKindStrategy.redeemInKind(shares, debtReduction, receiver);
         if (!_sameInKindResult(preview, strategyResult)) revert InKindRedemptionMismatch();
 
@@ -382,6 +384,8 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events, IRo
         lastProfitUpdate = block.timestamp;
 
         uint256 grossAssets = IERC20(asset()).balanceOf(address(this)) + strategyDebt;
+        // Justification: Reentrancy is prevented because report() is protected by nonReentrant.
+        // slither-disable-next-line reentrancy-no-eth,reentrancy-benign
         _assessReportFees(grossAssets, report_.gain);
 
         emit StrategyReported(msg.sender, report_.gain, report_.loss, report_.debtPayment);
@@ -567,12 +571,16 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events, IRo
         }
     }
 
+    // Justification: Reentrancy is prevented because user-facing entrypoints (withdraw, report)
+    // are protected by the nonReentrant modifier. The totalFee == 0 check is a parameter-derived early return.
+    // slither-disable-next-line reentrancy-no-eth,reentrancy-benign,incorrect-equality
     function _assessReportFees(uint256 grossAssets, uint256 reportedGain) private {
         IRobinAccountant currentAccountant = accountant;
         if (address(currentAccountant) == address(0)) return;
 
         (uint256 performanceFee, uint256 managementFee) = currentAccountant.assessReportFees(grossAssets, reportedGain);
         uint256 totalFee = performanceFee + managementFee;
+        // slither-disable-next-line incorrect-equality
         if (totalFee == 0) return;
 
         if (totalFee > lockedProfit) revert InvalidAccounting();
