@@ -173,7 +173,7 @@ contract CoreStrategy is StrategyBase {
 
         // Justification: Reentrancy is prevented because harvest() is protected by nonReentrant.
         // The event emitted after the external call is benign logging.
-        // slither-disable-next-line reentrancy-benign
+        // slither-disable-next-line reentrancy-benign,reentrancy-events
         assetGain = _sellReward(token, amount, config.adapter);
         emit CoreRewardSold(token, amount, assetGain);
     }
