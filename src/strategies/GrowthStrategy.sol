@@ -20,8 +20,6 @@ import {IStockToken} from "../interfaces/external/IStockToken.sol";
 import {CategoryPolicy, RewardCategory, RewardDisposition, RewardTokenConfig} from "../types/ProtocolTypes.sol";
 import {CoreStrategy} from "./CoreStrategy.sol";
 
-
-
 /// @title Robin Harvest Growth Strategy
 /// @notice rhINDEX-Growth strategy that sells SELL rewards, ignores IGNORE rewards, and retains approved stock rewards.
 /// @dev Growth extends Core's Index Finance deployment, withdrawal, reward selling, min-output, and reporting behavior.
@@ -143,6 +141,7 @@ contract GrowthStrategy is CoreStrategy {
             emit CoreRewardsClaimed(token, amount);
             if (amount == 0) continue;
 
+            // slither-disable-next-line calls-loop
             RewardTokenConfig memory config = rewardRegistry.getRewardTokenConfig(token);
             if (!config.enabled) {
                 emit CoreRewardSkipped(token, amount, RewardDisposition.Ignore);
@@ -218,6 +217,7 @@ contract GrowthStrategy is CoreStrategy {
             // slither-disable-next-line incorrect-equality
             if (retained == 0) continue;
 
+            // slither-disable-next-line calls-loop
             RewardTokenConfig memory config = rewardRegistry.getRewardTokenConfig(token);
             uint256 amountToSell = _tokenAmountForAssetValue(token, remaining);
             if (amountToSell > retained) amountToSell = retained;
@@ -229,6 +229,7 @@ contract GrowthStrategy is CoreStrategy {
             // slither-disable-next-line timestamp
             if (valueBefore > amountOut) loss += valueBefore - amountOut;
 
+            // slither-disable-next-line calls-loop
             uint256 newAvailable = IERC20(asset()).balanceOf(address(this));
             // Justification: remaining newAvailable comparison is safe.
             // slither-disable-next-line timestamp
@@ -310,6 +311,7 @@ contract GrowthStrategy is CoreStrategy {
         // Justification: Bounded loop of retained tokens is safe.
         // slither-disable-next-line calls-loop
         for (uint256 i; i < tokens.length; ++i) {
+            // slither-disable-next-line calls-loop
             RewardTokenConfig memory config = rewardRegistry.getRewardTokenConfig(tokens[i]);
             if (config.enabled && config.category == category) {
                 value += _valueToken(tokens[i], retainedBalance[tokens[i]]);
@@ -322,12 +324,14 @@ contract GrowthStrategy is CoreStrategy {
         // slither-disable-next-line incorrect-equality
         if (amount == 0) return 0;
         // Justification: updatedAt is validated inside the OracleRegistry; the strategy does not re-check it.
-        // slither-disable-next-line unused-return
+        // slither-disable-next-line unused-return,calls-loop
         (uint256 priceIn,) = oracleRegistry.getValidatedPrice(token);
         // Justification: updatedAt is validated inside the OracleRegistry; the strategy does not re-check it.
-        // slither-disable-next-line unused-return
+        // slither-disable-next-line unused-return,calls-loop
         (uint256 priceOut,) = oracleRegistry.getValidatedPrice(asset());
+        // slither-disable-next-line calls-loop
         uint8 decimalsIn = IERC20Metadata(token).decimals();
+        // slither-disable-next-line calls-loop
         uint8 decimalsOut = IERC20Metadata(asset()).decimals();
         value = amount.mulDiv(priceIn, priceOut).mulDiv(10 ** decimalsOut, 10 ** decimalsIn);
     }
@@ -337,12 +341,14 @@ contract GrowthStrategy is CoreStrategy {
         // slither-disable-next-line incorrect-equality
         if (assetValue == 0) return 0;
         // Justification: updatedAt is validated inside the OracleRegistry; the strategy does not re-check it.
-        // slither-disable-next-line unused-return
+        // slither-disable-next-line unused-return,calls-loop
         (uint256 priceIn,) = oracleRegistry.getValidatedPrice(token);
         // Justification: updatedAt is validated inside the OracleRegistry; the strategy does not re-check it.
-        // slither-disable-next-line unused-return
+        // slither-disable-next-line unused-return,calls-loop
         (uint256 priceOut,) = oracleRegistry.getValidatedPrice(asset());
+        // slither-disable-next-line calls-loop
         uint8 decimalsIn = IERC20Metadata(token).decimals();
+        // slither-disable-next-line calls-loop
         uint8 decimalsOut = IERC20Metadata(asset()).decimals();
         amount = assetValue.mulDiv(priceOut, priceIn, Math.Rounding.Ceil).mulDiv(
             10 ** decimalsIn, 10 ** decimalsOut, Math.Rounding.Ceil

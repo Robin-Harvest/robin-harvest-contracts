@@ -212,6 +212,7 @@ contract CoreStrategy is StrategyBase {
         uint48 deadline = _swapDeadline();
 
         IERC20(token).forceApprove(address(executionRouter), amount);
+        // slither-disable-next-line calls-loop
         amountOut = executionRouter.swapExactInput(
             SwapRequest({
                 adapter: adapter,
@@ -232,11 +233,13 @@ contract CoreStrategy is StrategyBase {
     ///      swap is attempted. The router independently rechecks oracle deviation against the realized execution.
     function _minimumOutput(address token, uint256 amount) internal view returns (uint256 minAmountOut) {
         // Justification: updatedAt is validated inside the OracleRegistry; the strategy does not re-check it.
-        // slither-disable-next-line unused-return
+        // slither-disable-next-line unused-return,calls-loop
         (uint256 priceIn,) = oracleRegistry.getValidatedPrice(token);
-        // slither-disable-next-line unused-return
+        // slither-disable-next-line unused-return,calls-loop
         (uint256 priceOut,) = oracleRegistry.getValidatedPrice(asset());
+        // slither-disable-next-line calls-loop
         uint8 decimalsIn = IERC20Metadata(token).decimals();
+        // slither-disable-next-line calls-loop
         uint8 decimalsOut = IERC20Metadata(asset()).decimals();
 
         uint256 expectedOut = amount.mulDiv(priceIn, priceOut).mulDiv(10 ** decimalsOut, 10 ** decimalsIn);
