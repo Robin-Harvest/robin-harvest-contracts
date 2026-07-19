@@ -231,18 +231,26 @@ abstract contract StrategyBase is IRobinStrategy, AccessManaged, ReentrancyGuard
     /// @notice Frees deployed assets back into this contract and returns realized loss, if any.
     function _freeFunds(uint256 amount) internal virtual returns (uint256 loss);
 
+    // Justification: _claimRewards is a virtual hook overridden by concrete strategies (e.g. CoreStrategy).
+    // slither-disable-next-line dead-code
     function _claimRewards() internal virtual {}
 
     function _processRewardToken(address token) internal virtual returns (uint256 assetGain);
 
+    // Justification: _tend is a virtual hook overridden by concrete strategies (e.g. CoreStrategy).
+    // slither-disable-next-line dead-code
     function _tend() internal virtual {}
 
+    // Justification: _shutdownStrategy is a virtual hook overridden by concrete strategies (e.g. CoreStrategy).
+    // slither-disable-next-line dead-code
     function _shutdownStrategy() internal virtual {}
 
     function _emergencyWithdraw() internal virtual returns (uint256 loss);
 
     function _deployedAssets() internal view virtual returns (uint256);
 
+    // Justification: _rewardAssets is a virtual hook overridden by concrete strategies (e.g. CoreStrategy).
+    // slither-disable-next-line dead-code
     function _rewardAssets() internal view virtual returns (uint256) {
         return 0;
     }

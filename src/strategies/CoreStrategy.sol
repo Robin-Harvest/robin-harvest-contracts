@@ -104,6 +104,8 @@ contract CoreStrategy is StrategyBase {
     function _freeFunds(uint256 amount) internal override returns (uint256 loss) {
         uint256 positionBefore = deployedAssets();
         uint256 requested = amount > positionBefore ? positionBefore : amount;
+        // Justification: requested == 0 is a parameter-derived early return, not a balance invariant.
+        // slither-disable-next-line incorrect-equality
         if (requested == 0) return amount;
 
         uint256 balanceBefore = IERC20(asset()).balanceOf(address(this));
@@ -134,6 +136,8 @@ contract CoreStrategy is StrategyBase {
             emit CoreRewardsClaimed(token, amount);
             if (amount == 0) continue;
 
+            // Justification: The registry read is a pure view call inside a bounded reward-token loop.
+            // slither-disable-next-line calls-loop
             RewardTokenConfig memory config = rewardRegistry.getRewardTokenConfig(token);
             if (!config.enabled) {
                 emit CoreRewardSkipped(token, amount, RewardDisposition.Ignore);
@@ -145,6 +149,8 @@ contract CoreStrategy is StrategyBase {
 
     function _processRewardToken(address token) internal override returns (uint256 assetGain) {
         uint256 amount = IERC20(token).balanceOf(address(this));
+        // Justification: amount == 0 is an early return for dust balances, not a balance invariant.
+        // slither-disable-next-line incorrect-equality
         if (amount == 0) return 0;
 
         RewardTokenConfig memory config = rewardRegistry.getRewardTokenConfig(token);
@@ -165,6 +171,9 @@ contract CoreStrategy is StrategyBase {
         if (config.disposition == RewardDisposition.Retain) revert RetainedRewardsUnsupported(token);
         if (config.disposition != RewardDisposition.Sell) revert InvalidRange(0, uint256(config.disposition), 2);
 
+        // Justification: Reentrancy is prevented because harvest() is protected by nonReentrant.
+        // The event emitted after the external call is benign logging.
+        // slither-disable-next-line reentrancy-benign
         assetGain = _sellReward(token, amount, config.adapter);
         emit CoreRewardSold(token, amount, assetGain);
     }
@@ -194,6 +203,8 @@ contract CoreStrategy is StrategyBase {
     function _sellReward(address token, uint256 amount, address adapter) private returns (uint256 amountOut) {
         if (adapter == address(0)) revert ZeroAddress();
         uint256 minAmountOut = _minimumOutput(token, amount);
+        // Justification: minAmountOut == 0 guards against worthless oracle-derived output, not a balance invariant.
+        // slither-disable-next-line incorrect-equality
         if (minAmountOut == 0) revert ZeroMinimumOutput(token, amount);
         uint48 deadline = _swapDeadline();
 
@@ -217,7 +228,10 @@ contract CoreStrategy is StrategyBase {
     ///      This is deliberately conservative: if either oracle is stale/paused/invalid, the registry reverts and no
     ///      swap is attempted. The router independently rechecks oracle deviation against the realized execution.
     function _minimumOutput(address token, uint256 amount) private view returns (uint256 minAmountOut) {
+        // Justification: updatedAt is validated inside the OracleRegistry; the strategy does not re-check it.
+        // slither-disable-next-line unused-return
         (uint256 priceIn,) = oracleRegistry.getValidatedPrice(token);
+        // slither-disable-next-line unused-return
         (uint256 priceOut,) = oracleRegistry.getValidatedPrice(asset());
         uint8 decimalsIn = IERC20Metadata(token).decimals();
         uint8 decimalsOut = IERC20Metadata(asset()).decimals();
@@ -226,6 +240,8 @@ contract CoreStrategy is StrategyBase {
         minAmountOut = expectedOut.mulDiv(Constants.BPS - maxSlippageBps, Constants.BPS);
     }
 
+    // Justification: block.timestamp is used to construct a swap deadline, not for authorization or pricing.
+    // slither-disable-next-line timestamp
     function _swapDeadline() private view returns (uint48 deadline) {
         uint256 rawDeadline = block.timestamp + uint256(swapDeadlineDelay);
         if (rawDeadline > type(uint48).max) revert DeadlineOverflow(rawDeadline);
