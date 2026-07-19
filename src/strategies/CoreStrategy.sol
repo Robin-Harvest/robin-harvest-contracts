@@ -101,7 +101,7 @@ contract CoreStrategy is StrategyBase {
         emit CoreCapitalDeployed(amount);
     }
 
-    function _freeFunds(uint256 amount) internal override returns (uint256 loss) {
+    function _freeFunds(uint256 amount) internal virtual override returns (uint256 loss) {
         uint256 positionBefore = deployedAssets();
         uint256 requested = amount > positionBefore ? positionBefore : amount;
         // Justification: requested == 0 is a parameter-derived early return, not a balance invariant.
@@ -122,7 +122,7 @@ contract CoreStrategy is StrategyBase {
         emit CoreCapitalFreed(amount, withdrawn, loss);
     }
 
-    function _claimRewards() internal override {
+    function _claimRewards() internal virtual override {
         if (!indexFinance.isEligible(address(this))) revert IndexFinanceIneligible(address(this));
 
         (address[] memory rewardTokens_, uint256[] memory claimedAmounts) =
@@ -147,7 +147,7 @@ contract CoreStrategy is StrategyBase {
         }
     }
 
-    function _processRewardToken(address token) internal override returns (uint256 assetGain) {
+    function _processRewardToken(address token) internal virtual override returns (uint256 assetGain) {
         uint256 amount = IERC20(token).balanceOf(address(this));
         // Justification: amount == 0 is an early return for dust balances, not a balance invariant.
         // slither-disable-next-line incorrect-equality
@@ -178,29 +178,29 @@ contract CoreStrategy is StrategyBase {
         emit CoreRewardSold(token, amount, assetGain);
     }
 
-    function _tend() internal view override {
+    function _tend() internal view virtual override {
         if (!indexFinance.isEligible(address(this))) revert IndexFinanceIneligible(address(this));
     }
 
     /// @dev Shutdown stops future deployment through StrategyBase lifecycle. Capital return is handled by emergencyWithdraw.
-    function _shutdownStrategy() internal override {}
+    function _shutdownStrategy() internal virtual override {}
 
-    function _emergencyWithdraw() internal override returns (uint256 loss) {
+    function _emergencyWithdraw() internal virtual override returns (uint256 loss) {
         uint256 amount = deployedAssets();
         if (amount == 0) return 0;
         loss = _withdrawFromIndexFinance(amount, amount);
     }
 
-    function _deployedAssets() internal view override returns (uint256) {
+    function _deployedAssets() internal view virtual override returns (uint256) {
         return deployedAssets();
     }
 
     /// @dev Core excludes unsold rewards from NAV until they are converted to INDEX.
-    function _rewardAssets() internal pure override returns (uint256) {
+    function _rewardAssets() internal view virtual override returns (uint256) {
         return 0;
     }
 
-    function _sellReward(address token, uint256 amount, address adapter) private returns (uint256 amountOut) {
+    function _sellReward(address token, uint256 amount, address adapter) internal returns (uint256 amountOut) {
         if (adapter == address(0)) revert ZeroAddress();
         uint256 minAmountOut = _minimumOutput(token, amount);
         // Justification: minAmountOut == 0 guards against worthless oracle-derived output, not a balance invariant.
@@ -227,7 +227,7 @@ contract CoreStrategy is StrategyBase {
     ///      amountIn * priceIn / priceOut, converted from token decimals to INDEX decimals, less configured slippage.
     ///      This is deliberately conservative: if either oracle is stale/paused/invalid, the registry reverts and no
     ///      swap is attempted. The router independently rechecks oracle deviation against the realized execution.
-    function _minimumOutput(address token, uint256 amount) private view returns (uint256 minAmountOut) {
+    function _minimumOutput(address token, uint256 amount) internal view returns (uint256 minAmountOut) {
         // Justification: updatedAt is validated inside the OracleRegistry; the strategy does not re-check it.
         // slither-disable-next-line unused-return
         (uint256 priceIn,) = oracleRegistry.getValidatedPrice(token);
