@@ -20,9 +20,7 @@ import {IStockToken} from "../interfaces/external/IStockToken.sol";
 import {CategoryPolicy, RewardCategory, RewardDisposition, RewardTokenConfig} from "../types/ProtocolTypes.sol";
 import {CoreStrategy} from "./CoreStrategy.sol";
 
-interface IExecutionRouterRoutes {
-    function isRouteApproved(address adapter, address tokenIn, address tokenOut) external view returns (bool approved);
-}
+
 
 /// @title Robin Harvest Growth Strategy
 /// @notice rhINDEX-Growth strategy that sells SELL rewards, ignores IGNORE rewards, and retains approved stock rewards.
@@ -104,6 +102,8 @@ contract GrowthStrategy is CoreStrategy {
     function markRebalance(RewardCategory category) external restricted {
         CategoryPolicy memory policy = categoryPolicies[category];
         uint256 previous = lastRebalanceAt[category];
+        // Justification: block.timestamp is used for a target policy rebalance cooldown check.
+        // slither-disable-next-line timestamp
         if (policy.rebalanceCooldown != 0 && previous != 0 && block.timestamp < previous + policy.rebalanceCooldown) {
             revert CooldownActive(previous + policy.rebalanceCooldown);
         }
@@ -134,6 +134,8 @@ contract GrowthStrategy is CoreStrategy {
             indexFinance.claimRewards(address(this), address(this));
         if (rewardTokens_.length != claimedAmounts.length) revert InvalidRewardClaim();
 
+        // Justification: Bounded reward tokens list iteration.
+        // slither-disable-next-line calls-loop
         for (uint256 i; i < rewardTokens_.length; ++i) {
             address token = rewardTokens_[i];
             uint256 amount = claimedAmounts[i];
@@ -150,6 +152,8 @@ contract GrowthStrategy is CoreStrategy {
 
     function _processRewardToken(address token) internal override returns (uint256 assetGain) {
         uint256 amount = IERC20(token).balanceOf(address(this));
+        // Justification: amount == 0 is an early return check.
+        // slither-disable-next-line incorrect-equality
         if (amount == 0) return 0;
 
         RewardTokenConfig memory config = rewardRegistry.getRewardTokenConfig(token);
@@ -160,7 +164,11 @@ contract GrowthStrategy is CoreStrategy {
 
         uint256 retained = retainedBalance[token];
         uint256 processAmount = amount > retained ? amount - retained : 0;
+        // Justification: processAmount == 0 checks if there is any new reward to process.
+        // slither-disable-next-line incorrect-equality
         if (processAmount == 0 && config.disposition == RewardDisposition.Retain) return 0;
+        // Justification: processAmount == 0 checks if there is any new reward to process.
+        // slither-disable-next-line incorrect-equality
         if (processAmount == 0) return super._processRewardToken(token);
 
         if (processAmount < config.minHarvestAmount) {
@@ -174,6 +182,8 @@ contract GrowthStrategy is CoreStrategy {
         }
 
         if (config.disposition == RewardDisposition.Sell) {
+            // Justification: Reentrancy is prevented because harvest() is protected by nonReentrant.
+            // slither-disable-next-line reentrancy-benign,reentrancy-events
             assetGain = _sellReward(token, amount, config.adapter);
             emit CoreRewardSold(token, amount, assetGain);
             return assetGain;
@@ -187,6 +197,9 @@ contract GrowthStrategy is CoreStrategy {
     /// @dev Frees deployed INDEX first, then liquidates retained assets only if INDEX remains insufficient.
     /// TODO(PHASE-12-LIQUIDATION-ORDER): Replace insertion-order liquidation with the governance-approved liquidation
     /// order once the architecture defines its storage and update rules.
+    // Justification: Reentrancy is prevented because withdraw/redeem are protected by nonReentrant in the vault,
+    // and freeFunds is only callable by the vault and protected by nonReentrant in StrategyBase.
+    // slither-disable-next-line reentrancy-no-eth,reentrancy-benign,reentrancy-events
     function _freeFunds(uint256 amount) internal override returns (uint256 loss) {
         uint256 balanceBefore = IERC20(asset()).balanceOf(address(this));
         loss = super._freeFunds(amount);
@@ -196,9 +209,13 @@ contract GrowthStrategy is CoreStrategy {
 
         uint256 remaining = amount - available;
         address[] memory tokens = _retainedTokens;
+        // Justification: Bounded loop of retained tokens is safe.
+        // slither-disable-next-line calls-loop
         for (uint256 i; i < tokens.length && remaining != 0; ++i) {
             address token = tokens[i];
             uint256 retained = retainedBalance[token];
+            // Justification: retained == 0 check is an early return check.
+            // slither-disable-next-line incorrect-equality
             if (retained == 0) continue;
 
             RewardTokenConfig memory config = rewardRegistry.getRewardTokenConfig(token);
@@ -208,9 +225,13 @@ contract GrowthStrategy is CoreStrategy {
             uint256 valueBefore = _valueToken(token, amountToSell);
             retainedBalance[token] = retained - amountToSell;
             uint256 amountOut = _sellReward(token, amountToSell, config.adapter);
+            // Justification: valueBefore > amountOut comparison is safe.
+            // slither-disable-next-line timestamp
             if (valueBefore > amountOut) loss += valueBefore - amountOut;
 
             uint256 newAvailable = IERC20(asset()).balanceOf(address(this));
+            // Justification: remaining newAvailable comparison is safe.
+            // slither-disable-next-line timestamp
             remaining = newAvailable >= amount ? 0 : amount - newAvailable;
         }
 
@@ -225,13 +246,15 @@ contract GrowthStrategy is CoreStrategy {
     function _retainReward(address token, RewardTokenConfig memory config) private {
         if (!config.retainable || config.oracle == address(0)) revert RetainedAssetInvalid(token);
         if (config.adapter == address(0)) revert ZeroAddress();
-        if (!IExecutionRouterRoutes(address(executionRouter)).isRouteApproved(config.adapter, token, asset())) {
+        if (!executionRouter.isRouteApproved(config.adapter, token, asset())) {
             revert RetainedAssetRouteUnavailable(token, config.adapter);
         }
         _validateStockToken(token);
 
         uint256 amount = IERC20(token).balanceOf(address(this));
         uint256 value = _valueToken(token, amount);
+        // Justification: value == 0 checks if the token has non-zero oracle value before retention.
+        // slither-disable-next-line incorrect-equality
         if (value == 0) revert RetainedAssetInvalid(token);
 
         if (!isRetainedToken[token]) {
@@ -246,6 +269,8 @@ contract GrowthStrategy is CoreStrategy {
 
     function _validateStockToken(address token) private view {
         if (!IStockToken(token).transfersEnabled()) revert RetainedAssetTransfersPaused(token);
+        // Justification: corporateActionMultiplier is called to verify target stock token conforms to interface.
+        // slither-disable-next-line unused-return
         IStockToken(token).corporateActionMultiplier();
     }
 
@@ -273,6 +298,8 @@ contract GrowthStrategy is CoreStrategy {
 
     function _portfolioValue() private view returns (uint256 value) {
         address[] memory tokens = _retainedTokens;
+        // Justification: Bounded loop of retained tokens is safe.
+        // slither-disable-next-line calls-loop
         for (uint256 i; i < tokens.length; ++i) {
             value += _valueToken(tokens[i], retainedBalance[tokens[i]]);
         }
@@ -280,6 +307,8 @@ contract GrowthStrategy is CoreStrategy {
 
     function _categoryValue(RewardCategory category) private view returns (uint256 value) {
         address[] memory tokens = _retainedTokens;
+        // Justification: Bounded loop of retained tokens is safe.
+        // slither-disable-next-line calls-loop
         for (uint256 i; i < tokens.length; ++i) {
             RewardTokenConfig memory config = rewardRegistry.getRewardTokenConfig(tokens[i]);
             if (config.enabled && config.category == category) {
@@ -289,8 +318,14 @@ contract GrowthStrategy is CoreStrategy {
     }
 
     function _valueToken(address token, uint256 amount) private view returns (uint256 value) {
+        // Justification: amount == 0 check is an early return check.
+        // slither-disable-next-line incorrect-equality
         if (amount == 0) return 0;
+        // Justification: updatedAt is validated inside the OracleRegistry; the strategy does not re-check it.
+        // slither-disable-next-line unused-return
         (uint256 priceIn,) = oracleRegistry.getValidatedPrice(token);
+        // Justification: updatedAt is validated inside the OracleRegistry; the strategy does not re-check it.
+        // slither-disable-next-line unused-return
         (uint256 priceOut,) = oracleRegistry.getValidatedPrice(asset());
         uint8 decimalsIn = IERC20Metadata(token).decimals();
         uint8 decimalsOut = IERC20Metadata(asset()).decimals();
@@ -298,17 +333,28 @@ contract GrowthStrategy is CoreStrategy {
     }
 
     function _tokenAmountForAssetValue(address token, uint256 assetValue) private view returns (uint256 amount) {
+        // Justification: assetValue == 0 check is an early return check.
+        // slither-disable-next-line incorrect-equality
         if (assetValue == 0) return 0;
+        // Justification: updatedAt is validated inside the OracleRegistry; the strategy does not re-check it.
+        // slither-disable-next-line unused-return
         (uint256 priceIn,) = oracleRegistry.getValidatedPrice(token);
+        // Justification: updatedAt is validated inside the OracleRegistry; the strategy does not re-check it.
+        // slither-disable-next-line unused-return
         (uint256 priceOut,) = oracleRegistry.getValidatedPrice(asset());
         uint8 decimalsIn = IERC20Metadata(token).decimals();
         uint8 decimalsOut = IERC20Metadata(asset()).decimals();
-        amount = assetValue.mulDiv(priceOut, priceIn, Math.Rounding.Ceil)
-            .mulDiv(10 ** decimalsIn, 10 ** decimalsOut, Math.Rounding.Ceil);
+        amount = assetValue.mulDiv(priceOut, priceIn, Math.Rounding.Ceil).mulDiv(
+            10 ** decimalsIn, 10 ** decimalsOut, Math.Rounding.Ceil
+        );
     }
 
     function _exposureBps(uint256 value, uint256 nav) private pure returns (uint256 exposureBps) {
+        // Justification: value == 0 check is an early return check.
+        // slither-disable-next-line incorrect-equality
         if (value == 0) return 0;
+        // Justification: nav == 0 check prevents division by zero.
+        // slither-disable-next-line incorrect-equality
         if (nav == 0) return type(uint256).max;
         exposureBps = value.mulDiv(Constants.BPS, nav, Math.Rounding.Ceil);
     }

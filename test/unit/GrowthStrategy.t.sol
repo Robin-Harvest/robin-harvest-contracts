@@ -379,7 +379,12 @@ contract GrowthStrategyTest is Test {
 
     function _oracleConfig(address feed, bool paused) private pure returns (OracleConfig memory config) {
         config = OracleConfig({
-            feed: feed, heartbeat: 1 hours, decimals: 8, maxDeviationBps: 500, uiMultiplier: 1e18, paused: paused
+            feed: feed,
+            heartbeat: 1 hours,
+            decimals: 8,
+            maxDeviationBps: 500,
+            uiMultiplier: 1e18,
+            paused: paused
         });
     }
 

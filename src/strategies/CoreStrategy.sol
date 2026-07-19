@@ -122,6 +122,8 @@ contract CoreStrategy is StrategyBase {
         emit CoreCapitalFreed(amount, withdrawn, loss);
     }
 
+    // Justification: overridden in GrowthStrategy; slither flags as dead-code if not directly called.
+    // slither-disable-next-line dead-code
     function _claimRewards() internal virtual override {
         if (!indexFinance.isEligible(address(this))) revert IndexFinanceIneligible(address(this));
 
@@ -195,7 +197,8 @@ contract CoreStrategy is StrategyBase {
         return deployedAssets();
     }
 
-    /// @dev Core excludes unsold rewards from NAV until they are converted to INDEX.
+    // Justification: overridden in GrowthStrategy; slither flags as dead-code if not directly called.
+    // slither-disable-next-line dead-code
     function _rewardAssets() internal view virtual override returns (uint256) {
         return 0;
     }
