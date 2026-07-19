@@ -172,6 +172,9 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events, IRo
 
     /// @notice Previews the optional proportional INDEX and retained-stock payout for Growth vault shares.
     /// @dev Every amount uses floor rounding against the current share supply, so previews never overstate a payout.
+    // Justification: uses shares == supply comparison to handle full redemption, and checks if supply is non-zero.
+    // Both variables can be tainted by block.timestamp (via strategyDebt or lockedProfit).
+    // slither-disable-next-line incorrect-equality,timestamp
     function previewInKindRedeem(uint256 shares) external view returns (InKindRedemptionResult memory result) {
         IInKindRedemptionStrategy inKindStrategy = _inKindStrategy();
         result = inKindStrategy.previewInKindRedemption(shares);
@@ -186,6 +189,9 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events, IRo
     /// @notice Redeems shares for proportional INDEX and GrowthStrategy retained assets without liquidating stocks.
     /// @dev This explicit non-ERC-4626 extension burns shares before external transfers. The vault remains asset-agnostic:
     ///      only the strategy selects, accounts for, and transfers retained stock tokens.
+    // Justification: uses shares == supplyBefore comparison to handle full redemption.
+    // MaxRedeem comparison depends on totalAssets (tainted by block.timestamp).
+    // slither-disable-next-line incorrect-equality,timestamp
     function redeemInKind(uint256 shares, address receiver, address owner)
         external
         nonReentrant
@@ -430,6 +436,8 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events, IRo
         inKindStrategy = IInKindRedemptionStrategy(strategyAddress);
     }
 
+    // Justification: Compares values that could be tainted by block.timestamp.
+    // slither-disable-next-line timestamp
     function _sameInKindResult(InKindRedemptionResult memory expected, InKindRedemptionResult memory actual)
         private
         pure

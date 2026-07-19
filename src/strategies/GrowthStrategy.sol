@@ -116,6 +116,9 @@ contract GrowthStrategy is CoreStrategy, IInKindRedemptionStrategy {
     /// @dev Only RobinVault may call this method. It snapshots all strategy balances before effects and external token
     ///      transfers. Retained assets must be standard ERC-20 tokens: fee-on-transfer, rebasing, and hook-based
     ///      behavior is unsupported unless a dedicated integration validates it.
+    // Justification: lastReportedAssets is updated after external funds freeing.
+    // The entire entry point is protected by nonReentrant in the vault and here.
+    // slither-disable-next-line reentrancy-no-eth,reentrancy-benign
     function redeemInKind(uint256 shares, uint256 debtReduction, address receiver)
         external
         override
@@ -231,6 +234,9 @@ contract GrowthStrategy is CoreStrategy, IInKindRedemptionStrategy {
         }
     }
 
+    // Justification: Loop of external token transfers is bounded and required for pro-rata payout.
+    // Amount is checked against 0 using strict equality to avoid redundant zero transfers.
+    // slither-disable-next-line incorrect-equality,calls-loop
     function _transferRetainedTokens(InKindRedemptionResult memory result, address receiver) private {
         for (uint256 i; i < result.retainedTokens.length; ++i) {
             uint256 amount = result.retainedAmounts[i];
@@ -239,6 +245,9 @@ contract GrowthStrategy is CoreStrategy, IInKindRedemptionStrategy {
         }
     }
 
+    // Justification: Amount check against 0 is standard to skip zero transfers.
+    // Balance checks are required to verify delta and detect fee-on-transfer.
+    // slither-disable-next-line incorrect-equality,calls-loop
     function _transferExact(address token, address receiver, uint256 amount) private {
         if (amount == 0) return;
         uint256 receiverBefore = IERC20(token).balanceOf(receiver);
