@@ -20,7 +20,9 @@ import {IRobinStrategy} from "../interfaces/IRobinStrategy.sol";
 import {IRobinAccountant} from "../interfaces/IRobinAccountant.sol";
 import {IInKindRedemptionStrategy} from "../interfaces/IInKindRedemptionStrategy.sol";
 import {IRobinVaultReport} from "../interfaces/IRobinVaultReport.sol";
-import {HarvestReport, InKindRedemptionResult, LifecycleState, PendingStrategyMigration} from "../types/ProtocolTypes.sol";
+import {
+    HarvestReport, InKindRedemptionResult, LifecycleState, PendingStrategyMigration
+} from "../types/ProtocolTypes.sol";
 import {ERC4626Paris} from "./ERC4626Paris.sol";
 
 /// @title Robin Harvest ERC-4626 Vault
@@ -569,8 +571,7 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events, IRo
         IRobinAccountant currentAccountant = accountant;
         if (address(currentAccountant) == address(0)) return;
 
-        (uint256 performanceFee, uint256 managementFee) =
-            currentAccountant.assessReportFees(grossAssets, reportedGain);
+        (uint256 performanceFee, uint256 managementFee) = currentAccountant.assessReportFees(grossAssets, reportedGain);
         uint256 totalFee = performanceFee + managementFee;
         if (totalFee == 0) return;
 

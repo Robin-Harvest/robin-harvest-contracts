@@ -112,8 +112,7 @@ contract RobinAccountant is AccessManaged {
 
         uint256 elapsed = block.timestamp - lastFeeAccrual;
         lastFeeAccrual = block.timestamp;
-        managementFee = totalAssetsGross.mulDiv(feeConfig.managementBps, Constants.BPS).mulDiv(
-            elapsed, Constants.SECONDS_PER_YEAR
-        );
+        managementFee =
+            totalAssetsGross.mulDiv(feeConfig.managementBps, Constants.BPS).mulDiv(elapsed, Constants.SECONDS_PER_YEAR);
     }
 }

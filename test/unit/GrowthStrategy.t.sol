@@ -933,7 +933,6 @@ contract GrowthStrategyTest is Test {
         assertApproxEqAbs(preTotalNav, postTotalNav + totalRedeemedValue, 10);
     }
 
-
     function testCategoryRetentionSplitBelowTargetRetainsMax() public {
         vm.startPrank(governance);
         strategy.setCategoryPolicy(

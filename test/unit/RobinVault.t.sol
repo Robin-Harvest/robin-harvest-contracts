@@ -172,8 +172,7 @@ contract RobinVaultTest is Test {
     function testVaultStrategyReentrancyPrevention() public {
         // Use a dedicated vault so we can call setStrategy (the main vault already has one).
         RobinVault reentrancyVault = new RobinVault(index, "Reentrancy Vault", "rhRE", address(manager));
-        ReenteringStrategy reentrantStrategy =
-            new ReenteringStrategy(address(reentrancyVault), index, address(manager));
+        ReenteringStrategy reentrantStrategy = new ReenteringStrategy(address(reentrancyVault), index, address(manager));
 
         vm.prank(governance);
         reentrancyVault.setStrategy(address(reentrantStrategy));
