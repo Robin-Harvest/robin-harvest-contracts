@@ -212,13 +212,8 @@ contract RobinVaultTest is Test {
         vm.startPrank(user);
         index.approve(address(newVault), type(uint256).max);
         newVault.deposit(10 ether, user);
-        
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                RobinVault.InKindRedemptionNotSupported.selector,
-                address(0)
-            )
-        );
+
+        vm.expectRevert(abi.encodeWithSelector(RobinVault.InKindRedemptionNotSupported.selector, address(0)));
         newVault.redeemInKind(1 ether, user, user);
         vm.stopPrank();
     }

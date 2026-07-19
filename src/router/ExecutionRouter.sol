@@ -81,9 +81,10 @@ contract ExecutionRouter is IExecutionRouter, AccessManaged, ReentrancyGuard, Ev
         tokenIn.forceApprove(request.adapter, request.amountIn);
         // Justification: Reentrancy is impossible because this function is protected by the `nonReentrant` modifier.
         // slither-disable-next-line reentrancy-no-eth,reentrancy-benign,reentrancy-balance
-        amountOut = IDexAdapter(request.adapter).swapExactInput(
-            request.tokenIn, request.tokenOut, request.amountIn, request.minAmountOut, recipient, request.deadline
-        );
+        amountOut = IDexAdapter(request.adapter)
+            .swapExactInput(
+                request.tokenIn, request.tokenOut, request.amountIn, request.minAmountOut, recipient, request.deadline
+            );
         tokenIn.forceApprove(request.adapter, 0);
 
         uint256 balanceAfter = tokenOut.balanceOf(recipient);
@@ -99,11 +100,7 @@ contract ExecutionRouter is IExecutionRouter, AccessManaged, ReentrancyGuard, Ev
         approved = _approvedAdapters[adapter];
     }
 
-    function isRouteApproved(address adapter, address tokenIn, address tokenOut)
-        external
-        view
-        returns (bool approved)
-    {
+    function isRouteApproved(address adapter, address tokenIn, address tokenOut) external view returns (bool approved) {
         approved = _routes[getRouteId(adapter, tokenIn, tokenOut)].enabled;
     }
 

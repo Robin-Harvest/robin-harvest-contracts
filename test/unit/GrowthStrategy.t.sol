@@ -582,7 +582,7 @@ contract GrowthStrategyTest is Test {
         uint256 supplyBefore = vault.totalSupply();
         uint256 debtBefore = vault.strategyDebt();
         (uint256 indexPreview, uint256 retainedPreview) = _previewSingleRetained(shares);
-        
+
         uint256 receiverIndexBefore = index.balanceOf(receiver);
         uint256 receiverStockBefore = retainStock.balanceOf(receiver);
 
@@ -686,10 +686,10 @@ contract GrowthStrategyTest is Test {
         _depositAndDeploy(1_000 ether);
         // No rewards accrued/retained
         uint256 shares = vault.balanceOf(user) / 2;
-        
+
         vm.prank(user);
         InKindRedemptionResult memory result = vault.redeemInKind(shares, user, user);
-        
+
         assertEq(result.retainedTokens.length, 0); // no tokens retained
         assertEq(result.indexPaid, 500 ether);
     }
@@ -697,7 +697,7 @@ contract GrowthStrategyTest is Test {
     function testInKindRedeemManyRetainedAssets() public {
         MockStockToken extraStock = new MockStockToken("Extra Stock", "mEXT", 18);
         MockOracle extraFeed = new MockOracle(8, 1e8);
-        
+
         vm.startPrank(governance);
         oracleRegistry.setOracleConfig(address(extraStock), _oracleConfig(address(extraFeed), false));
         router.setRoute(address(dex), address(extraStock), address(index), true, 500);
@@ -718,7 +718,7 @@ contract GrowthStrategyTest is Test {
         assertEq(strategy.retainedBalance(address(extraStock)), 50 ether);
 
         uint256 shares = vault.balanceOf(user) / 2;
-        
+
         uint256 userStockBefore = retainStock.balanceOf(user);
         uint256 userExtraBefore = extraStock.balanceOf(user);
 
@@ -755,7 +755,7 @@ contract GrowthStrategyTest is Test {
         uint256 shares = vault.balanceOf(user) / 3; // 1/3 shares
         vm.prank(user);
         vault.redeemInKind(shares, user, user);
-        
+
         // 10 * 1/3 = 3 wei (floor rounded)
         assertEq(retainStock.balanceOf(user), 3 wei);
         assertEq(strategy.retainedBalance(address(retainStock)), 7 wei);
@@ -795,7 +795,7 @@ contract GrowthStrategyTest is Test {
         vm.stopPrank();
 
         _depositAndDeploy(1_000 ether);
-        
+
         // Accrue fee token
         feeToken.mint(address(indexFinance), 100 ether);
         indexFinance.accrue(address(strategy), address(feeToken), 100 ether);
@@ -812,10 +812,7 @@ contract GrowthStrategyTest is Test {
         // Should revert because the strategy transfers 49.5 ether, but receiver only gets 49.005 ether
         vm.expectRevert(
             abi.encodeWithSelector(
-                GrowthStrategy.FeeOnTransferDetected.selector,
-                address(feeToken),
-                49.5 ether,
-                49.005 ether
+                GrowthStrategy.FeeOnTransferDetected.selector, address(feeToken), 49.5 ether, 49.005 ether
             )
         );
         vault.redeemInKind(shares, user, user);
@@ -842,7 +839,7 @@ contract GrowthStrategyTest is Test {
         strategy.harvest();
 
         uint256 shares = vault.balanceOf(user);
-        
+
         vm.prank(userTwo); // userTwo trying to redeem user's shares without allowance
         vm.expectRevert();
         vault.redeemInKind(shares, userTwo, user);
@@ -855,20 +852,15 @@ contract GrowthStrategyTest is Test {
         strategy.harvest();
 
         uint256 shares = vault.balanceOf(user) / 2;
-        
+
         InKindRedemptionResult memory preview = vault.previewInKindRedeem(shares);
-        
+
         uint256 receiverIndexBefore = index.balanceOf(receiver);
         uint256 receiverStockBefore = retainStock.balanceOf(receiver);
 
         vm.expectEmit(true, true, false, true, address(vault));
         emit RobinVault.InKindRedeem(
-            user,
-            receiver,
-            shares,
-            preview.indexPaid,
-            preview.retainedTokens,
-            preview.retainedAmounts
+            user, receiver, shares, preview.indexPaid, preview.retainedTokens, preview.retainedAmounts
         );
 
         vm.prank(user);
@@ -909,7 +901,7 @@ contract GrowthStrategyTest is Test {
         uint256 preTotalNav = preVaultIndex + preStrategyIndex + preRetainedValue;
 
         uint256 shares = vault.balanceOf(user) / 3;
-        
+
         uint256 receiverIndexBefore = index.balanceOf(receiver);
         uint256 receiverStockBefore = retainStock.balanceOf(receiver);
 

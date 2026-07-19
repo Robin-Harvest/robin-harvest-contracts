@@ -11,12 +11,7 @@ contract MockFeeOnTransferToken is ERC20, IStockToken {
     bool public override transfersEnabled = true;
     uint256 public override corporateActionMultiplier = 1e18;
 
-    constructor(
-        string memory name_,
-        string memory symbol_,
-        uint8 decimals_,
-        uint256 feeBps_
-    ) ERC20(name_, symbol_) {
+    constructor(string memory name_, string memory symbol_, uint8 decimals_, uint256 feeBps_) ERC20(name_, symbol_) {
         _mockDecimals = decimals_;
         feeBps = feeBps_;
     }
@@ -49,15 +44,11 @@ contract MockFeeOnTransferToken is ERC20, IStockToken {
         _burn(account, amount);
     }
 
-    function _update(
-        address from,
-        address to,
-        uint256 value
-    ) internal override {
+    function _update(address from, address to, uint256 value) internal override {
         if (!transfersEnabled && from != address(0) && to != address(0)) {
             revert("TransfersPaused");
         }
-        
+
         if (from != address(0) && to != address(0) && feeBps > 0) {
             uint256 fee = (value * feeBps) / 10000;
             uint256 netValue = value - fee;
