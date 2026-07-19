@@ -107,7 +107,12 @@ contract ExecutionRouterTest is Test {
 
     function _config(address feed) private pure returns (OracleConfig memory config) {
         config = OracleConfig({
-            feed: feed, heartbeat: 1 hours, decimals: 8, maxDeviationBps: 500, uiMultiplier: 1e18, paused: false
+            feed: feed,
+            heartbeat: 1 hours,
+            decimals: 8,
+            maxDeviationBps: 500,
+            uiMultiplier: 1e18,
+            paused: false
         });
     }
 }
