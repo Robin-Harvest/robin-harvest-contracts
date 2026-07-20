@@ -536,7 +536,18 @@ contract GrowthStrategyTest is Test {
         InKindRedemptionResult memory preview = strategy.previewInKindRedemption(shares);
         require(preview.retainedTokens.length == 1 && preview.retainedTokens[0] == address(retainStock));
         retainedPreview = preview.retainedAmounts[0];
-        indexPreview = preview.indexPaid + index.balanceOf(address(vault)) * shares / vault.totalSupply();
+        
+        uint256 vaultTotalAssets = vault.totalAssets();
+        uint256 remainingLockedProfit = vault.strategyDebt() + index.balanceOf(address(vault)) - vaultTotalAssets;
+        
+        uint256 lockedProfitDiscount = shares == vault.totalSupply()
+            ? remainingLockedProfit
+            : (remainingLockedProfit * shares + vault.totalSupply() - 1) / vault.totalSupply();
+
+        uint256 vaultIndexPaid = index.balanceOf(address(vault)) * shares / vault.totalSupply();
+        uint256 totalIndexPaid = vaultIndexPaid + preview.indexPaid;
+        
+        indexPreview = totalIndexPaid > lockedProfitDiscount ? totalIndexPaid - lockedProfitDiscount : 0;
     }
 
     function _refreshOracles() private {
