@@ -122,3 +122,50 @@ Every redemption must satisfy three core invariants (verified under test):
 - `error ZeroReceiver()`: Thrown when receiver is address(0).
 - `error InKindSupplyInvalid()`: Thrown if supply is zero or shares exceed supply.
 - `error FeeOnTransferDetected(address token, uint256 expected, uint256 received)`: Thrown when transfer delta is lower than requested amount.
+
+---
+
+## Production & Deployment Notes
+
+### EIP-170 Status
+`GrowthStrategy` remains below the EIP-170 runtime size limit after this implementation. The deployment size has been verified using `forge build --sizes`. This prevents future regressions regarding deployability.
+
+### Backward Compatibility
+The implementation does not modify:
+- ERC4626 deposits
+- ERC4626 withdrawals
+- CoreStrategy
+- Harvest pipeline
+- Reward processing
+- Existing accounting
+
+The feature exists only as an optional extension for advanced users.
+
+### Unsupported External Integrations
+Current implementation assumes:
+- The official Index Finance integration is still provisional.
+- Production oracle addresses are not finalized.
+- Production DEX routes remain external configuration.
+
+These are deployment concerns rather than protocol concerns.
+
+### Gas Impact
+- **Normal redemption**: Unchanged.
+- **In-kind redemption**: Linear gas cost in relation to the retained asset count, due to the need to transfer each asset and update its post-redemption exposure.
+
+### Time Complexity
+- `previewInKindRedeem`: $O(n)$
+- `redeemInKind`: $O(n)$
+*(where $n$ is the number of retained assets)*
+
+### Practical Limits
+Practical portfolio size depends on block gas limits. If a portfolio keeps a large number of retained assets (e.g., 200+), redeeming becomes extremely expensive and risks exceeding block gas limits.
+
+### Operational Requirements
+Before deployment:
+- Replace the provisional Index Finance ABI.
+- Verify oracle feeds and DEX routes.
+- Run mainnet fork tests.
+- Complete an external audit.
+
+> **Note on Oracles**: The in-kind redemption UX *does* rely directly on valid on-chain oracles. While proportional token distribution is determined strictly by balances (not valuation), the protocol must recalculate post-redemption category exposure (`_refreshExposure`) after the withdrawal. This exposure recalculation requires fresh oracle valuations. Thus, a paused or stale oracle will revert in-kind redemptions.
