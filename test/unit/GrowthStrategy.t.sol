@@ -1087,7 +1087,6 @@ contract GrowthStrategyTest is Test {
         vault.redeemInKind(shares, user, user);
     }
 
-
     function testPausedOracleFreezesWithdrawal() external {
         _depositAndDeploy(1_000 ether);
 
