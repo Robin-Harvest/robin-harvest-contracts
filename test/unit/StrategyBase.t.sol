@@ -130,15 +130,15 @@ contract StrategyBaseTest is Test {
         vm.startPrank(governance);
         strategy.addRewardToken(address(rewardA));
         strategy.setRewardTokenIsolated(address(rewardA), true);
-        
+
         assertTrue(strategy.isRewardTokenIsolated(address(rewardA)));
-        
+
         strategy.removeRewardToken(address(rewardA));
         assertFalse(strategy.isRewardTokenIsolated(address(rewardA)));
-        
+
         strategy.addRewardToken(address(rewardA));
         assertFalse(strategy.isRewardTokenIsolated(address(rewardA)));
-        
+
         vm.stopPrank();
     }
 }

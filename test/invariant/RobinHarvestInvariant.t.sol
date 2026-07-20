@@ -35,7 +35,7 @@ contract RobinHarvestHandler is Test {
     MockDex public dex;
     MockOracle public oracleFeed;
     MockStockToken public stockToken;
-    
+
     RobinVault public vault;
     GrowthStrategy public strategy;
     CoreStrategy public coreStrategy;
@@ -46,11 +46,11 @@ contract RobinHarvestHandler is Test {
 
     address public governance = makeAddr("governance");
     address[] public users;
-    
+
     // Invariant tracking variables
     mapping(address => uint256) public userTotalInvested; // Total INDEX deposited - withdrawn
     mapping(address => uint256) public userHighestSeenValue; // To track sandwich
-    
+
     uint256 public highestNAV;
     uint256 public feesPaid;
     uint256 public maxLossBps = 100;
@@ -62,21 +62,37 @@ contract RobinHarvestHandler is Test {
         dex = new MockDex();
         oracleFeed = new MockOracle(8, 1e8);
         stockToken = new MockStockToken("Stock", "STK", 18);
-        
+
         oracleRegistry = new OracleRegistry(address(manager));
         rewardRegistry = new RewardRegistry(address(manager));
         router = new ExecutionRouter(address(manager), oracleRegistry);
-        
+
         vault = new RobinVault(index, "Invariant Vault", "rhINV", address(manager));
         accountant = new RobinAccountant(index, address(manager));
-        
+
         strategy = new GrowthStrategy(
-            address(vault), index, address(manager), indexFinance, rewardRegistry, oracleRegistry, router, 500, 30 minutes
+            address(vault),
+            index,
+            address(manager),
+            indexFinance,
+            rewardRegistry,
+            oracleRegistry,
+            router,
+            500,
+            30 minutes
         );
         coreStrategy = new CoreStrategy(
-            address(vault), index, address(manager), indexFinance, rewardRegistry, oracleRegistry, router, 500, 30 minutes
+            address(vault),
+            index,
+            address(manager),
+            indexFinance,
+            rewardRegistry,
+            oracleRegistry,
+            router,
+            500,
+            30 minutes
         );
-        
+
         // Setup governance configs
         vm.startPrank(governance);
         vault.setStrategy(address(strategy));
@@ -84,15 +100,22 @@ contract RobinHarvestHandler is Test {
         accountant.setVault(address(vault));
         accountant.setFeeRecipient(governance);
         accountant.setFeeConfig(FeeConfig(1000, 1000)); // 10% perf, 10% mgmt
-        
-        oracleRegistry.setOracleConfig(address(stockToken), OracleConfig(address(oracleFeed), 86400, 8, 500, 1e18, false));
-        rewardRegistry.setRewardTokenConfig(address(stockToken), RewardTokenConfig(true, RewardCategory.Equity, RewardDisposition.Retain, address(oracleFeed), 0, true, address(dex), 2000));
-        
+
+        oracleRegistry.setOracleConfig(
+            address(stockToken), OracleConfig(address(oracleFeed), 86400, 8, 500, 1e18, false)
+        );
+        rewardRegistry.setRewardTokenConfig(
+            address(stockToken),
+            RewardTokenConfig(
+                true, RewardCategory.Equity, RewardDisposition.Retain, address(oracleFeed), 0, true, address(dex), 2000
+            )
+        );
+
         strategy.addRewardToken(address(stockToken));
         router.setRoute(address(dex), address(stockToken), address(index), true, 500); // 5% slippage
         vm.stopPrank();
-        
-        for (uint i = 0; i < 3; i++) {
+
+        for (uint256 i = 0; i < 3; i++) {
             address u = makeAddr(string(abi.encodePacked("user", i)));
             users.push(u);
             index.mint(u, 1_000_000 ether);
@@ -100,67 +123,67 @@ contract RobinHarvestHandler is Test {
             index.approve(address(vault), type(uint256).max);
         }
     }
-    
+
     function deposit(uint256 userIndex, uint96 amount) external {
         address u = users[userIndex % users.length];
         amount = uint96(bound(uint256(amount), 1, 10_000 ether));
         if (amount > index.balanceOf(u)) return;
-        
+
         vm.prank(u);
         vault.deposit(amount, u);
         userTotalInvested[u] += amount;
-        
+
         uint256 currentNAV = vault.totalAssets();
         if (currentNAV > highestNAV) highestNAV = currentNAV;
     }
-    
+
     function withdraw(uint256 userIndex, uint96 amount) external {
         address u = users[userIndex % users.length];
         uint256 maxW = vault.maxWithdraw(u);
         if (maxW == 0) return;
         amount = uint96(bound(uint256(amount), 1, maxW));
-        
+
         vm.prank(u);
         vault.withdraw(amount, u, u, uint16(maxLossBps));
         if (amount > userTotalInvested[u]) userTotalInvested[u] = 0;
         else userTotalInvested[u] -= amount;
     }
-    
+
     function redeemInKind(uint256 userIndex, uint96 shares) external {
         address u = users[userIndex % users.length];
         uint256 bal = vault.balanceOf(u);
         if (bal == 0) return;
         shares = uint96(bound(uint256(shares), 1, bal));
-        
+
         vm.prank(u);
         InKindRedemptionResult memory res = vault.redeemInKind(shares, u, u, uint16(maxLossBps));
-        
+
         uint256 val = res.indexPaid;
         if (res.retainedTokens.length > 0) val += res.retainedAmounts[0]; // simplistic 1:1 value assuming mock oracle
-        
+
         if (val > userTotalInvested[u]) userTotalInvested[u] = 0;
         else userTotalInvested[u] -= val;
-        
+
         // Track for sandwich
         if (val > userHighestSeenValue[u]) userHighestSeenValue[u] = val;
     }
-    
+
     function accrueAndHarvest(uint96 indexReward, uint96 stockReward) external {
         indexReward = uint96(bound(uint256(indexReward), 1, 1_000 ether));
         stockReward = uint96(bound(uint256(stockReward), 1, 1_000 ether));
-        
+
         index.mint(address(strategy), indexReward); // simulate INDEX gain
         stockToken.mint(address(strategy), stockReward);
-        
+
         vm.prank(governance);
         vault.deploy(vault.totalAssets() / 2);
-        
+
         indexFinance.accrue(address(strategy), address(stockToken), stockReward);
-        
+
         vm.warp(block.timestamp + 30 days);
         vm.prank(governance);
         strategy.harvest();
-        
+
         uint256 currentNAV = vault.totalAssets();
         if (currentNAV > highestNAV) highestNAV = currentNAV;
         feesPaid = index.balanceOf(governance);
@@ -178,12 +201,12 @@ contract RobinHarvestInvariantTest is StdInvariant, Test {
     function invariant_noProfitableSandwich() public view {
         // Since max deposit is 10k per call, if user deposits and redems, value shouldn't magically balloon.
         // A full check requires more granular state tracking, but we assert users don't extract infinite value.
-        for (uint i = 0; i < 3; i++) {
+        for (uint256 i = 0; i < 3; i++) {
             address u = handler.users(i);
             assertLe(handler.userHighestSeenValue(u), 1_000_000 ether, "User extracted more than starting balance");
         }
     }
-    
+
     function invariant_navMonotonicity() public view {
         // NAV only drops due to withdrawals or explicitly mocked losses.
         // In the handler we don't mock losses except through maxLossBps.
@@ -194,7 +217,7 @@ contract RobinHarvestInvariantTest is StdInvariant, Test {
             assertGe(navPerShare, 1e18 - 1, "NAV per share dropped below 1");
         }
     }
-    
+
     function invariant_noFeesOnPrincipal() public view {
         // Fees should only come from profits.
         uint256 totalAssets = handler.vault().totalAssets();
@@ -205,11 +228,11 @@ contract RobinHarvestInvariantTest is StdInvariant, Test {
         // General sanity check: if no gains, fees don't drain principal
         assertLe(handler.feesPaid(), 100_000 ether);
     }
-    
+
     function invariant_lossBoundsRespected() public view {
         // Strategy loss must not exceed maxLossBps. Handled by reverts in handler if it did.
     }
-    
+
     function invariant_growthExposureCaps() public view {
         GrowthStrategy s = GrowthStrategy(payable(address(handler.strategy())));
         uint256 nav = s.totalAssets();
@@ -219,7 +242,7 @@ contract RobinHarvestInvariantTest is StdInvariant, Test {
             assertLe(bps, 2000 + 100, "Exposure exceeded max by more than tolerance"); // 2000 is config, +100 for rounding tolerance
         }
     }
-    
+
     function invariant_coreRetainsNothing() public view {
         // Core strategy always sells everything
         CoreStrategy c = CoreStrategy(payable(address(handler.coreStrategy())));

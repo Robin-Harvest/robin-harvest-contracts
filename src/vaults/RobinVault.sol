@@ -211,9 +211,8 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events, IRo
         }
 
         uint256 remainingLockedProfit = _lockedProfitRemaining();
-        uint256 lockedProfitDiscount = shares == supply
-            ? remainingLockedProfit
-            : remainingLockedProfit.mulDiv(shares, supply, Math.Rounding.Ceil);
+        uint256 lockedProfitDiscount =
+            shares == supply ? remainingLockedProfit : remainingLockedProfit.mulDiv(shares, supply, Math.Rounding.Ceil);
 
         if (result.indexPaid > lockedProfitDiscount) {
             result.indexPaid -= lockedProfitDiscount;
@@ -278,14 +277,15 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events, IRo
         lastProfitUpdate = block.timestamp;
         emit StrategyDebtUpdated(address(strategy), debtBefore, strategyDebt);
 
-        InKindRedemptionResult memory strategyResult = inKindStrategy.redeemInKind(shares, debtReduction, receiver, maxLossBps);
+        InKindRedemptionResult memory strategyResult =
+            inKindStrategy.redeemInKind(shares, debtReduction, receiver, maxLossBps);
         if (!_validInKindResult(preview, strategyResult, maxLossBps)) revert InKindRedemptionMismatch();
 
         uint256 totalIndexPaid = vaultIndexPaid + strategyResult.indexPaid;
         uint256 netIndexToUser = totalIndexPaid > lockedProfitDiscount ? totalIndexPaid - lockedProfitDiscount : 0;
 
         if (netIndexToUser != 0) IERC20(asset()).safeTransfer(receiver, netIndexToUser);
-        
+
         result = strategyResult;
         result.indexPaid = netIndexToUser;
         emit InKindRedeem(owner, receiver, shares, result.indexPaid, result.retainedTokens, result.retainedAmounts);
@@ -555,8 +555,10 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events, IRo
         uint256 maxLoss = expected.indexPaid.mulDiv(maxLossBps, Constants.BPS, Math.Rounding.Ceil);
         if (expected.indexPaid - actual.indexPaid > maxLoss) return false;
 
-        if (expected.retainedTokens.length != actual.retainedTokens.length
-            || expected.retainedAmounts.length != actual.retainedAmounts.length) return false;
+        if (
+            expected.retainedTokens.length != actual.retainedTokens.length
+                || expected.retainedAmounts.length != actual.retainedAmounts.length
+        ) return false;
 
         for (uint256 i; i < expected.retainedTokens.length; ++i) {
             if (

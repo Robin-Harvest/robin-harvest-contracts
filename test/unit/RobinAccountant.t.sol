@@ -84,16 +84,16 @@ contract RobinAccountantTest is Test {
         // High water mark should only rise on net positive gain, and never fall.
         uint256 startHwm = accountant.highWaterMark();
         uint256 currentHwm = startHwm;
-        
+
         for (uint256 i = 0; i < 5; i++) {
             uint256 gain = uint256(gains[i]) * 1 ether;
             uint256 loss = uint256(losses[i]) * 1 ether;
-            
+
             vm.startPrank(governance);
             if (gain > 0) strategy.reportGainToDebt(gain);
             if (loss > 0) strategy.reportLoss(loss);
             vm.stopPrank();
-            
+
             uint256 newHwm = accountant.highWaterMark();
             assertGe(newHwm, currentHwm, "High water mark decreased!");
             currentHwm = newHwm;

@@ -65,9 +65,9 @@ contract UniswapV2DexAdapter is IDexAdapter, AccessManaged {
         // but the actual amount received is verified using balance differences to account for fee-on-transfer.
         // slither-disable-next-line unused-return
         router.swapExactTokensForTokens(amountIn, minAmountOut, path, recipient, deadline);
-        
+
         IERC20(tokenIn).forceApprove(address(router), 0);
-        
+
         amountOut = IERC20(tokenOut).balanceOf(recipient) - balanceBefore;
         if (amountOut < minAmountOut) revert InsufficientOutput(amountOut, minAmountOut);
     }
@@ -90,12 +90,12 @@ contract UniswapV2DexAdapter is IDexAdapter, AccessManaged {
 
     function _path(address tokenIn, address tokenOut) private view returns (address[] memory path) {
         if (tokenIn == address(0) || tokenOut == address(0)) revert ZeroAddress();
-        
+
         address[] memory customPath = _customPaths[tokenIn][tokenOut];
         if (customPath.length > 0) {
             return customPath;
         }
-        
+
         path = new address[](2);
         path[0] = tokenIn;
         path[1] = tokenOut;

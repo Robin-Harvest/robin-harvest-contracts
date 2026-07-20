@@ -1025,16 +1025,16 @@ contract GrowthStrategyTest is Test {
         index.mint(attacker, 500 ether);
         vm.startPrank(attacker);
         index.approve(address(vault), type(uint256).max);
-        
+
         // Deposit 500 ether
         vault.deposit(500 ether, attacker);
         uint256 attackerShares = vault.balanceOf(attacker);
-        
+
         // Attempt to redeem in-kind immediately
         InKindRedemptionResult memory result = vault.redeemInKind(attackerShares, attacker, attacker);
         vm.stopPrank();
 
-        // The attacker deposited 500 ether. 
+        // The attacker deposited 500 ether.
         // The total value received back (index + retained value) should not exceed 500 ether to prevent a profitable sandwich.
         uint256 valueReceived = result.indexPaid;
         for (uint256 i = 0; i < result.retainedTokens.length; i++) {
@@ -1042,7 +1042,7 @@ contract GrowthStrategyTest is Test {
                 valueReceived += strategy.retainedValue(result.retainedTokens[i]); // rough approximation
             }
         }
-        
+
         // We assert that the value received is <= 500 ether.
         assertLe(valueReceived, 500 ether, "Sandwich exploit was profitable!");
     }
@@ -1054,7 +1054,7 @@ contract GrowthStrategyTest is Test {
         // We simulate a loss in the IndexFinance withdrawal by setting nextWithdrawLoss
         uint256 expectedIndex = shares; // 100% redemption
         uint256 simulatedLoss = 5 ether; // 0.5% loss
-        
+
         MockIndexFinanceCore mockCore = MockIndexFinanceCore(address(indexFinance));
         mockCore.setNextWithdrawLoss(simulatedLoss);
 
@@ -1065,12 +1065,12 @@ contract GrowthStrategyTest is Test {
 
         assertEq(result.indexPaid, expectedIndex - simulatedLoss, "Loss not absorbed by user");
         assertEq(vault.strategyDebt(), 0, "Debt not fully reduced");
-        
+
         // Ensure exceeding maxLoss reverts
         _depositAndDeploy(1_000 ether);
         shares = vault.balanceOf(user);
         mockCore.setNextWithdrawLoss(6 ether); // 60 bps loss, exceeds 50 bps default maxLoss
-        
+
         vm.prank(user);
         vm.expectRevert();
         vault.redeemInKind(shares, user, user);
@@ -1082,7 +1082,7 @@ contract GrowthStrategyTest is Test {
         // Add a mock retained token that is disabled
         MockStockToken extraStock = new MockStockToken("Extra Stock", "mEXT", 18);
         MockOracle extraFeed = new MockOracle(8, 1e8);
-        
+
         vm.startPrank(governance);
         oracleRegistry.setOracleConfig(address(extraStock), _oracleConfig(address(extraFeed), false));
         // Config is disabled!
@@ -1105,39 +1105,39 @@ contract GrowthStrategyTest is Test {
         // Accrue both
         _accrueReward(retainStock, 100 ether);
         _accrueReward(extraStock, 50 ether);
-        
+
         vm.prank(governance);
         strategy.harvest();
-        
+
         // Assert balances
         assertEq(strategy.retainedBalance(address(extraStock)), 50 ether);
 
         // Vault is at 1000 shares.
         uint256 shares = vault.balanceOf(user);
-        
+
         // Disable oracle for retainStock just to test oracle skip as well
         vm.prank(governance);
         oracleRegistry.setOracleConfig(address(retainStock), _oracleConfig(address(0), true));
-        
-        // Now attempt an INDEX-only withdrawal which invokes `_freeFunds`. 
-        // It should skip liquidating `extraStock` because it's disabled, 
+
+        // Now attempt an INDEX-only withdrawal which invokes `_freeFunds`.
+        // It should skip liquidating `extraStock` because it's disabled,
         // and it should skip liquidating `retainStock` because its oracle is zero/paused!
-        // The withdrawal should succeed as long as we don't strictly require the liquidation to cover a deficit, 
+        // The withdrawal should succeed as long as we don't strictly require the liquidation to cover a deficit,
         // OR it frees exactly what is available from IndexFinance.
-        // Wait, `_freeFunds` frees INDEX from IndexFinance first. 
+        // Wait, `_freeFunds` frees INDEX from IndexFinance first.
         // Since we deposited 1_000 ether and we withdraw all, IndexFinance has 1_000 ether.
         // So `_freeFunds` will get the INDEX from IndexFinance, and it will NOT need to liquidate.
         // But let's say IndexFinance has a 5 ether loss, so it needs to liquidate to cover the remaining 5 ether!
-        
+
         MockIndexFinanceCore mockCore = MockIndexFinanceCore(address(indexFinance));
         mockCore.setNextWithdrawLoss(5 ether);
-        
+
         // Now it will try to liquidate. It skips both tokens.
         // `_freeFunds` will return `loss = 5 ether` because it couldn't liquidate them.
         // Then `vault.withdraw` will succeed but realize the loss.
         vm.prank(user);
         vault.withdraw(100 ether, user, user, 100); // 100 maxLoss bps = 1% > 0.5% loss
-        
+
         // The withdrawal succeeds without DoS!
     }
 }
