@@ -11,6 +11,7 @@ import {
     ExposureLimitExceeded,
     InvalidBasisPoints,
     InvalidRange,
+    LossExceedsMaximum,
     ZeroAddress
 } from "../libraries/Errors.sol";
 import {IExecutionRouter} from "../interfaces/IExecutionRouter.sol";
@@ -25,7 +26,8 @@ import {
     InKindRedemptionResult,
     RewardCategory,
     RewardDisposition,
-    RewardTokenConfig
+    RewardTokenConfig,
+    OracleConfig
 } from "../types/ProtocolTypes.sol";
 import {CoreStrategy} from "./CoreStrategy.sol";
 
@@ -133,7 +135,7 @@ contract GrowthStrategy is CoreStrategy, IInKindRedemptionStrategy {
     // Justification: lastReportedAssets is updated after external funds freeing.
     // The entire entry point is protected by nonReentrant in the vault and here.
     // slither-disable-next-line reentrancy-no-eth,reentrancy-benign
-    function redeemInKind(uint256 shares, uint256 debtReduction, address receiver)
+    function redeemInKind(uint256 shares, uint256 debtReduction, address receiver, uint16 maxLossBps)
         external
         override
         onlyVault
@@ -158,14 +160,15 @@ contract GrowthStrategy is CoreStrategy, IInKindRedemptionStrategy {
         uint256 deployedPaid = result.indexPaid > indexBalanceBefore ? result.indexPaid - indexBalanceBefore : 0;
         if (deployedPaid != 0) {
             uint256 loss = CoreStrategy._freeFunds(deployedPaid);
-            if (loss != 0) revert RetainedAssetInvalid(asset());
+            if (loss != 0) {
+                uint256 lossBps = loss.mulDiv(Constants.BPS, deployedPaid, Math.Rounding.Ceil);
+                if (lossBps > maxLossBps) revert LossExceedsMaximum(lossBps, maxLossBps);
+                result.indexPaid -= loss;
+            }
         }
 
         _transferRetainedTokens(result, receiver);
-        _transferExact(asset(), receiver, result.indexPaid);
-        if (IERC20(asset()).balanceOf(address(this)) + result.indexPaid < indexBalanceBefore) {
-            revert RetainedAssetInvalid(asset());
-        }
+        _transferExact(asset(), msg.sender, result.indexPaid);
 
         lastReportedAssets = totalAssets();
         emit GrowthInKindRedeemed(receiver, shares, result.indexPaid, result.retainedTokens, result.retainedAmounts);
@@ -366,6 +369,8 @@ contract GrowthStrategy is CoreStrategy, IInKindRedemptionStrategy {
         emit GrowthRetentionSplit(token, retainAmount, sellAmount, retainBps);
     }
 
+    event RetainedTokenSkipped(address indexed token, string reason);
+
     /// @dev Frees deployed INDEX first, then liquidates retained assets in governance order when INDEX is insufficient.
     // Justification: Reentrancy is prevented because withdraw/redeem are protected by nonReentrant in the vault,
     // and freeFunds is only callable by the vault and protected by nonReentrant in StrategyBase.
@@ -390,6 +395,17 @@ contract GrowthStrategy is CoreStrategy, IInKindRedemptionStrategy {
 
             // slither-disable-next-line calls-loop
             RewardTokenConfig memory config = rewardRegistry.getRewardTokenConfig(token);
+            if (!config.enabled || config.adapter == address(0)) {
+                emit RetainedTokenSkipped(token, "Disabled or no adapter");
+                continue;
+            }
+            // slither-disable-next-line calls-loop
+            OracleConfig memory oracleConfig = oracleRegistry.getOracleConfig(token);
+            if (oracleConfig.feed == address(0) || oracleConfig.paused) {
+                emit RetainedTokenSkipped(token, "Oracle disabled or paused");
+                continue;
+            }
+
             uint256 amountToSell = _tokenAmountForAssetValue(token, remaining);
             if (amountToSell > retained) amountToSell = retained;
 

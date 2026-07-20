@@ -102,6 +102,7 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events, IRo
         address[] retainedTokens,
         uint256[] retainedAmounts
     );
+    event FeesCapped(uint256 accrued, uint256 paid);
 
     error CapExceeded(uint256 assetsAfterDeposit, uint256 cap);
     error InKindRedemptionNotSupported(address strategy_);
@@ -208,6 +209,17 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events, IRo
         } else if (supply != 0) {
             result.indexPaid += IERC20(asset()).balanceOf(address(this)).mulDiv(shares, supply);
         }
+
+        uint256 remainingLockedProfit = _lockedProfitRemaining();
+        uint256 lockedProfitDiscount = shares == supply
+            ? remainingLockedProfit
+            : remainingLockedProfit.mulDiv(shares, supply, Math.Rounding.Ceil);
+
+        if (result.indexPaid > lockedProfitDiscount) {
+            result.indexPaid -= lockedProfitDiscount;
+        } else {
+            result.indexPaid = 0;
+        }
     }
 
     /// @notice Redeems shares for proportional INDEX and GrowthStrategy retained assets without liquidating stocks.
@@ -221,6 +233,25 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events, IRo
         nonReentrant
         returns (InKindRedemptionResult memory result)
     {
+        return _redeemInKindWithMaxLoss(shares, receiver, owner, defaultMaxLossBps);
+    }
+
+    /// @notice Redeems shares for proportional INDEX and GrowthStrategy retained assets without liquidating stocks.
+    /// @dev This explicit non-ERC-4626 extension burns shares before external transfers. The vault remains asset-agnostic:
+    ///      only the strategy selects, accounts for, and transfers retained stock tokens.
+    function redeemInKind(uint256 shares, address receiver, address owner, uint16 maxLossBps)
+        external
+        nonReentrant
+        returns (InKindRedemptionResult memory result)
+    {
+        return _redeemInKindWithMaxLoss(shares, receiver, owner, maxLossBps);
+    }
+
+    function _redeemInKindWithMaxLoss(uint256 shares, address receiver, address owner, uint16 maxLossBps)
+        private
+        returns (InKindRedemptionResult memory result)
+    {
+        if (maxLossBps > Constants.MAX_BPS) revert InvalidBasisPoints(maxLossBps);
         if (shares == 0) revert ZeroShares();
         if (receiver == address(0)) revert ZeroAddress();
         if (shares > maxRedeem(owner)) revert ERC4626ExceededMaxRedeem(owner, shares, maxRedeem(owner));
@@ -229,29 +260,34 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events, IRo
         uint256 supplyBefore = totalSupply();
         uint256 vaultIndexBefore = IERC20(asset()).balanceOf(address(this));
         uint256 debtBefore = strategyDebt;
-        uint256 lockedProfitBefore = lockedProfit;
+        uint256 remainingLockedProfit = _lockedProfitRemaining();
         InKindRedemptionResult memory preview = inKindStrategy.previewInKindRedemption(shares);
 
         uint256 debtReduction = shares == supplyBefore ? debtBefore : debtBefore.mulDiv(shares, supplyBefore);
         if (preview.debtReduction != debtReduction) revert InKindRedemptionMismatch();
         uint256 vaultIndexPaid =
             shares == supplyBefore ? vaultIndexBefore : vaultIndexBefore.mulDiv(shares, supplyBefore);
+        uint256 lockedProfitDiscount = shares == supplyBefore
+            ? remainingLockedProfit
+            : remainingLockedProfit.mulDiv(shares, supplyBefore, Math.Rounding.Ceil);
 
         if (_msgSender() != owner) _spendAllowance(owner, _msgSender(), shares);
         _burn(owner, shares);
         strategyDebt = debtBefore - debtReduction;
-        lockedProfit = shares == supplyBefore ? 0 : lockedProfitBefore - lockedProfitBefore.mulDiv(shares, supplyBefore);
+        lockedProfit = shares == supplyBefore ? 0 : remainingLockedProfit - lockedProfitDiscount;
         lastProfitUpdate = block.timestamp;
         emit StrategyDebtUpdated(address(strategy), debtBefore, strategyDebt);
 
-        // Justification: Reentrancy is prevented because redeemInKind() is protected by nonReentrant.
-        // slither-disable-next-line reentrancy-no-eth,reentrancy-benign
-        InKindRedemptionResult memory strategyResult = inKindStrategy.redeemInKind(shares, debtReduction, receiver);
-        if (!_sameInKindResult(preview, strategyResult)) revert InKindRedemptionMismatch();
+        InKindRedemptionResult memory strategyResult = inKindStrategy.redeemInKind(shares, debtReduction, receiver, maxLossBps);
+        if (!_validInKindResult(preview, strategyResult, maxLossBps)) revert InKindRedemptionMismatch();
 
-        if (vaultIndexPaid != 0) IERC20(asset()).safeTransfer(receiver, vaultIndexPaid);
+        uint256 totalIndexPaid = vaultIndexPaid + strategyResult.indexPaid;
+        uint256 netIndexToUser = totalIndexPaid > lockedProfitDiscount ? totalIndexPaid - lockedProfitDiscount : 0;
+
+        if (netIndexToUser != 0) IERC20(asset()).safeTransfer(receiver, netIndexToUser);
+        
         result = strategyResult;
-        result.indexPaid += vaultIndexPaid;
+        result.indexPaid = netIndexToUser;
         emit InKindRedeem(owner, receiver, shares, result.indexPaid, result.retainedTokens, result.retainedAmounts);
         _enforcePostWithdrawEligibility();
         _updateEligibilityTracking();
@@ -508,18 +544,19 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events, IRo
         inKindStrategy = IInKindRedemptionStrategy(strategyAddress);
     }
 
-    // Justification: Compares values that could be tainted by block.timestamp.
-    // slither-disable-next-line timestamp
-    function _sameInKindResult(InKindRedemptionResult memory expected, InKindRedemptionResult memory actual)
-        private
-        pure
-        returns (bool)
-    {
-        if (
-            expected.debtReduction != actual.debtReduction || expected.indexPaid != actual.indexPaid
-                || expected.retainedTokens.length != actual.retainedTokens.length
-                || expected.retainedAmounts.length != actual.retainedAmounts.length
-        ) return false;
+    function _validInKindResult(
+        InKindRedemptionResult memory expected,
+        InKindRedemptionResult memory actual,
+        uint16 maxLossBps
+    ) private pure returns (bool) {
+        if (expected.debtReduction != actual.debtReduction) return false;
+        if (actual.indexPaid > expected.indexPaid) return false;
+
+        uint256 maxLoss = expected.indexPaid.mulDiv(maxLossBps, Constants.BPS, Math.Rounding.Ceil);
+        if (expected.indexPaid - actual.indexPaid > maxLoss) return false;
+
+        if (expected.retainedTokens.length != actual.retainedTokens.length
+            || expected.retainedAmounts.length != actual.retainedAmounts.length) return false;
 
         for (uint256 i; i < expected.retainedTokens.length; ++i) {
             if (
@@ -583,7 +620,10 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events, IRo
         // slither-disable-next-line incorrect-equality
         if (totalFee == 0) return;
 
-        if (totalFee > lockedProfit) revert InvalidAccounting();
+        if (totalFee > lockedProfit) {
+            emit FeesCapped(totalFee, lockedProfit);
+            totalFee = lockedProfit;
+        }
         lockedProfit -= totalFee;
 
         address recipient = currentAccountant.feeRecipient();

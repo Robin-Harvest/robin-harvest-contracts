@@ -62,4 +62,55 @@ contract RobinAccountantTest is Test {
 
         assertEq(index.balanceOf(feeRecipient), 20 ether);
     }
+
+    function testFuzzFeeSplitMath(uint96 grossAssets, uint96 reportedGain) public {
+        uint256 gross = bound(uint256(grossAssets), 1, 100_000_000 ether);
+        uint256 gain = bound(uint256(reportedGain), 0, gross);
+
+        // Management fee: 200 bps / year. We fast forward exactly 1 year to make math exact.
+        vm.warp(block.timestamp + 365 days);
+
+        vm.prank(address(vault));
+        (uint256 perfFee, uint256 mgmtFee) = accountant.assessReportFees(gross, gain);
+
+        // Performance fee should be 20% of gain
+        assertEq(perfFee, (gain * 2000) / 10000, "Performance fee math incorrect");
+
+        // Management fee should be 2% of gross assets after exactly 1 year
+        assertEq(mgmtFee, (gross * 200) / 10000, "Management fee math incorrect");
+    }
+
+    function testFuzzHighWaterMarkDrift(uint16[5] calldata gains, uint16[5] calldata losses) public {
+        // High water mark should only rise on net positive gain, and never fall.
+        uint256 startHwm = accountant.highWaterMark();
+        uint256 currentHwm = startHwm;
+        
+        for (uint256 i = 0; i < 5; i++) {
+            uint256 gain = uint256(gains[i]) * 1 ether;
+            uint256 loss = uint256(losses[i]) * 1 ether;
+            
+            vm.startPrank(governance);
+            if (gain > 0) strategy.reportGainToDebt(gain);
+            if (loss > 0) strategy.reportLoss(loss);
+            vm.stopPrank();
+            
+            uint256 newHwm = accountant.highWaterMark();
+            assertGe(newHwm, currentHwm, "High water mark decreased!");
+            currentHwm = newHwm;
+        }
+    }
+
+    function testZeroFeeMintPath() public {
+        // Test that 0 fee config results in 0 fees and 0 transfers
+        vm.prank(governance);
+        accountant.setFeeConfig(FeeConfig({performanceBps: 0, managementBps: 0}));
+
+        vm.warp(block.timestamp + 365 days);
+
+        vm.prank(address(vault));
+        (uint256 perfFee, uint256 mgmtFee) = accountant.assessReportFees(1000 ether, 100 ether);
+
+        assertEq(perfFee, 0);
+        assertEq(mgmtFee, 0);
+    }
 }

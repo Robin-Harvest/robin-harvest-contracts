@@ -8,6 +8,8 @@ import {RobinVault} from "../../src/vaults/RobinVault.sol";
 import {StrategyBase} from "../../src/strategies/StrategyBase.sol";
 import {Events} from "../../src/libraries/Events.sol";
 import {CooldownActive, ZeroAddress} from "../../src/libraries/Errors.sol";
+import {FeeConfig} from "../../src/types/ProtocolTypes.sol";
+import {RobinAccountant} from "../../src/accounting/RobinAccountant.sol";
 import {MockINDEX} from "../mocks/MockINDEX.sol";
 import {TestStrategy} from "../helpers/TestStrategy.sol";
 
@@ -210,6 +212,37 @@ contract RobinVaultTest is Test {
         vm.prank(user);
         vm.expectRevert(ZeroAddress.selector);
         vault.redeemInKind(10 ether, address(0), user);
+    }
+
+    function testReportSucceedsWhenFeesExceedLockedProfit() public {
+        // Setup accountant with 10% management fee
+        RobinAccountant newAccountant = new RobinAccountant(index, address(manager));
+        vm.startPrank(governance);
+        vault.setAccountant(address(newAccountant));
+        newAccountant.setVault(address(vault));
+        newAccountant.setFeeRecipient(receiver);
+        newAccountant.setFeeConfig(FeeConfig({performanceBps: 0, managementBps: 1000}));
+        vm.stopPrank();
+
+        // Mint and deposit
+        index.mint(user, 10_000 ether);
+        vm.prank(user);
+        index.approve(address(vault), type(uint256).max);
+        vm.prank(user);
+        vault.deposit(10_000 ether, user);
+
+        // Fast forward 1 year
+        vm.warp(block.timestamp + 365 days);
+
+        // Management fee should be 1,000 ether, but locked profit is 0!
+        // We report a small gain of 1 wei.
+        vm.prank(governance);
+        strategy.reportGainToDebt(1);
+
+        // Since fees are capped at lockedProfit (which was 0 before report, and became 1),
+        // totalFee is capped at 1 wei, and it shouldn't revert.
+        assertEq(index.balanceOf(receiver), 1, "Fee should be capped at lockedProfit (1 wei)");
+        assertEq(vault.lockedProfit(), 0, "Locked profit should be fully drained");
     }
 
     function testRedeemInKindRevertsWhenNoStrategy() public {

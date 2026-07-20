@@ -169,3 +169,19 @@ Before deployment:
 - Complete an external audit.
 
 > **Note on Oracles**: The in-kind redemption UX *does* rely directly on valid on-chain oracles. While proportional token distribution is determined strictly by balances (not valuation), the protocol must recalculate post-redemption category exposure (`_refreshExposure`) after the withdrawal. This exposure recalculation requires fresh oracle valuations. Thus, a paused or stale oracle will revert in-kind redemptions.
+
+---
+
+## Protocol Economics & Fees
+
+### Fee Shortfall Policy (Cap-and-Forfeit)
+The vault employs a strict **cap-and-forfeit** model for management and performance fees. When `report()` is called, if the total accrued fee exceeds the vault's currently available `lockedProfit`, the fee is capped at `lockedProfit` (draining it to 0), and any remaining fee shortfall is permanently **forfeited**.
+This ensures that management fees are only realizable from actual locked profit, protecting principal and preventing the protocol from entering a "fee debt" spiral during extended periods of zero-gain or loss.
+
+---
+
+## Eligibility Semantics
+
+### Net Assets vs. INDEX Holdings
+The vault evaluates deposit/withdraw eligibility against a configurable `eligibilityThreshold`. This threshold is measured against the vault's **net assets** (i.e. `totalAssets()`, which includes strategy-deployed capital and accrued strategy value), *not* its raw un-deployed INDEX token holdings. 
+This is an intentional design choice to reflect the true economic size of the vault rather than just its idle liquidity, ensuring eligibility policies accurately capture the protocol's total managed value.

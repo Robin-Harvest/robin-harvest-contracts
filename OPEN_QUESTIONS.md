@@ -60,3 +60,16 @@ Phase 1 assumes no external ABI, address, route, feed, role holder, parameter, o
 - Which official RPC archive endpoints and fixed fork block numbers should be used?
 - Which external-contract fixtures, historical incidents, invariant properties, and adversarial token behaviors must be covered?
 - What fuzz/invariant run counts, gas limits, coverage thresholds, and CI acceptance criteria are required?
+
+---
+
+## Resolved Questions (v1.2 Pre-Audit)
+
+- **Fee Shortfall Policy (Finding 1 Related)**: *What happens if accrued management fees exceed `lockedProfit`?*
+  **Decision (Cap-and-Forfeit)**: Fees are strictly capped at the available `lockedProfit`. Any fee amount exceeding this cap is permanently forfeited. This prevents a "fee debt spiral" and protects user principal during extended periods of stagnation.
+
+- **In-Kind Redemption Slippage (Finding 3)**: *Who bears the cost of slippage during the forced liquidation of non-INDEX assets?*
+  **Decision**: The exiting user bears the slippage cost. The actual payout can be less than the previewed payout, bounded by a user-supplied `maxLossBps` parameter. This prevents DoS attacks and protects remaining shareholders.
+
+- **DEX Adapter Architecture (Finding 2)**: *Should the DEX adapter support multi-hop routing, and how should it be secured?*
+  **Decision**: Yes, the `UniswapV2DexAdapter` now supports multi-hop paths via a `setCustomPath` function. It is secured via `AccessManaged` to ensure only governance can configure routes. The exact-input flow was also hardened to pull tokens, force approve, and reset approval to 0.

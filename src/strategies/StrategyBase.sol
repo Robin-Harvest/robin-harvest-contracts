@@ -185,6 +185,7 @@ abstract contract StrategyBase is IRobinStrategy, AccessManaged, ReentrancyGuard
     function removeRewardToken(address token) external restricted {
         if (!isRewardTokenTracked[token]) return;
         isRewardTokenTracked[token] = false;
+        isRewardTokenIsolated[token] = false;
         uint256 length = _rewardTokens.length;
         uint256 foundIndex = type(uint256).max;
         for (uint256 i; i < length; ++i) {

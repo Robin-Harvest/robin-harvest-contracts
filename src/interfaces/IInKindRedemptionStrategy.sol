@@ -12,7 +12,7 @@ interface IInKindRedemptionStrategy {
 
     /// @notice Transfers the strategy-held proportional position to a receiver.
     /// @dev Callable only by the strategy's configured vault.
-    function redeemInKind(uint256 shares, uint256 debtReduction, address receiver)
+    function redeemInKind(uint256 shares, uint256 debtReduction, address receiver, uint16 maxLossBps)
         external
         returns (InKindRedemptionResult memory result);
 }
