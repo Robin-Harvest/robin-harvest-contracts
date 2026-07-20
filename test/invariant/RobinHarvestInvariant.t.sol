@@ -177,9 +177,14 @@ contract RobinHarvestHandler is Test {
         index.mint(address(strategy), indexReward); // simulate INDEX gain
         stockToken.mint(address(strategy), stockReward);
 
-        uint256 amountToDeploy = vault.totalAssets() / 2;
-        vm.prank(governance);
-        vault.deploy(amountToDeploy);
+        uint256 idleVaultBalance = index.balanceOf(address(vault));
+        if (idleVaultBalance != 0) {
+            uint256 amountToDeploy = idleVaultBalance / 2;
+            if (amountToDeploy != 0) {
+                vm.prank(governance);
+                vault.deploy(amountToDeploy);
+            }
+        }
 
         indexFinance.accrue(address(strategy), address(stockToken), stockReward);
 
