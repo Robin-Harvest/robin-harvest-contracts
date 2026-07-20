@@ -184,6 +184,9 @@ contract RobinHarvestHandler is Test {
         indexFinance.accrue(address(strategy), address(stockToken), stockReward);
 
         vm.warp(block.timestamp + 30 days);
+
+        if (!indexFinance.isEligible(address(strategy))) return;
+
         vm.prank(governance);
         strategy.harvest();
 

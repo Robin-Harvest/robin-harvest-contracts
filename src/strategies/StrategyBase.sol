@@ -61,7 +61,7 @@ abstract contract StrategyBase is IRobinStrategy, AccessManaged, ReentrancyGuard
         tokens = _rewardTokens;
     }
 
-    function deployFunds(uint256 amount) external override nonReentrant onlyVault {
+    function deployFunds(uint256 amount) external override onlyVault {
         if (lifecycleState != LifecycleState.Active) revert InvalidLifecycleState(uint8(lifecycleState));
         if (amount == 0) revert ZeroAmount();
         _deployFunds(amount);
@@ -72,7 +72,6 @@ abstract contract StrategyBase is IRobinStrategy, AccessManaged, ReentrancyGuard
     function freeFunds(uint256 amount)
         external
         override
-        nonReentrant
         onlyVault
         returns (uint256 amountFreed, uint256 loss)
     {

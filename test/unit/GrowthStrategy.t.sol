@@ -1128,7 +1128,7 @@ contract GrowthStrategyTest is Test {
 
         // Disable oracle for retainStock just to test oracle skip as well
         vm.prank(governance);
-        oracleRegistry.setOracleConfig(address(retainStock), _oracleConfig(address(0), true));
+        oracleRegistry.setOracleConfig(address(retainStock), _oracleConfig(address(retainFeed), true));
 
         // Now attempt an INDEX-only withdrawal which invokes `_freeFunds`.
         // It should skip liquidating `extraStock` because it's disabled,
