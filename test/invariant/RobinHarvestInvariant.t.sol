@@ -169,14 +169,17 @@ contract RobinHarvestHandler is Test {
     }
 
     function accrueAndHarvest(uint96 indexReward, uint96 stockReward) external {
+        if (vault.totalAssets() == 0) return;
+
         indexReward = uint96(bound(uint256(indexReward), 1, 1_000 ether));
         stockReward = uint96(bound(uint256(stockReward), 1, 1_000 ether));
 
         index.mint(address(strategy), indexReward); // simulate INDEX gain
         stockToken.mint(address(strategy), stockReward);
 
+        uint256 amountToDeploy = vault.totalAssets() / 2;
         vm.prank(governance);
-        vault.deploy(vault.totalAssets() / 2);
+        vault.deploy(amountToDeploy);
 
         indexFinance.accrue(address(strategy), address(stockToken), stockReward);
 
@@ -211,9 +214,11 @@ contract RobinHarvestInvariantTest is StdInvariant, Test {
         // NAV only drops due to withdrawals or explicitly mocked losses.
         // In the handler we don't mock losses except through maxLossBps.
         // But NAV per share should generally remain stable or grow.
-        uint256 supply = handler.vault().totalSupply();
-        if (supply > 0) {
-            uint256 navPerShare = handler.vault().totalAssets() * 1e18 / supply;
+        uint256 totalSupply = handler.vault().totalSupply();
+        uint256 totalAssets = handler.vault().totalAssets();
+        if (totalSupply > 0) {
+            uint256 expectedMultiplier = 10 ** 6; // vault DECIMALS_OFFSET
+            uint256 navPerShare = totalSupply == 0 ? 1e18 : totalAssets * 1e18 * expectedMultiplier / totalSupply;
             assertGe(navPerShare, 1e18 - 1, "NAV per share dropped below 1");
         }
     }

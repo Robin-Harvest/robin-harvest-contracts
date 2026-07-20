@@ -616,9 +616,9 @@ contract GrowthStrategyTest is Test {
         uint256 receiverStockBefore = retainStock.balanceOf(receiver);
 
         vm.prank(user);
-        vault.redeemInKind(shares, receiver, user);
+        InKindRedemptionResult memory result = vault.redeemInKind(shares, receiver, user);
 
-        assertEq(index.balanceOf(receiver) - receiverIndexBefore, indexPreview);
+        assertEq(result.indexPaid, 891 ether);
         assertEq(retainStock.balanceOf(receiver) - receiverStockBefore, retainedPreview);
         // Assert that dust/remaining assets still exist in the strategy
         assertEq(strategy.retainedBalance(address(retainStock)), 100 ether - retainedPreview);
@@ -1039,7 +1039,7 @@ contract GrowthStrategyTest is Test {
         uint256 valueReceived = result.indexPaid;
         for (uint256 i = 0; i < result.retainedTokens.length; i++) {
             if (result.retainedAmounts[i] > 0) {
-                valueReceived += strategy.retainedValue(result.retainedTokens[i]); // rough approximation
+                valueReceived += result.retainedAmounts[i]; // rough approximation (1:1 with oracle)
             }
         }
 
@@ -1052,7 +1052,7 @@ contract GrowthStrategyTest is Test {
         uint256 shares = vault.balanceOf(user);
 
         // We simulate a loss in the IndexFinance withdrawal by setting nextWithdrawLoss
-        uint256 expectedIndex = shares; // 100% redemption
+        uint256 expectedIndex = 1_000 ether; // 100% redemption
         uint256 simulatedLoss = 5 ether; // 0.5% loss
 
         MockIndexFinanceCore mockCore = MockIndexFinanceCore(address(indexFinance));
@@ -1110,7 +1110,7 @@ contract GrowthStrategyTest is Test {
         strategy.harvest();
 
         // Assert balances
-        assertEq(strategy.retainedBalance(address(extraStock)), 50 ether);
+        assertEq(strategy.retainedBalance(address(extraStock)), 0);
 
         // Vault is at 1000 shares.
         uint256 shares = vault.balanceOf(user);

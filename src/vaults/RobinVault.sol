@@ -262,10 +262,14 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events, IRo
         uint256 remainingLockedProfit = _lockedProfitRemaining();
         InKindRedemptionResult memory preview = inKindStrategy.previewInKindRedemption(shares);
 
+        // Justification: shares == supplyBefore is safe because supplyBefore is the exact totalSupply.
+        // slither-disable-next-line incorrect-equality
         uint256 debtReduction = shares == supplyBefore ? debtBefore : debtBefore.mulDiv(shares, supplyBefore);
         if (preview.debtReduction != debtReduction) revert InKindRedemptionMismatch();
+        // slither-disable-next-line incorrect-equality
         uint256 vaultIndexPaid =
             shares == supplyBefore ? vaultIndexBefore : vaultIndexBefore.mulDiv(shares, supplyBefore);
+        // slither-disable-next-line incorrect-equality
         uint256 lockedProfitDiscount = shares == supplyBefore
             ? remainingLockedProfit
             : remainingLockedProfit.mulDiv(shares, supplyBefore, Math.Rounding.Ceil);
@@ -273,10 +277,14 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events, IRo
         if (_msgSender() != owner) _spendAllowance(owner, _msgSender(), shares);
         _burn(owner, shares);
         strategyDebt = debtBefore - debtReduction;
+        // slither-disable-next-line incorrect-equality
         lockedProfit = shares == supplyBefore ? 0 : remainingLockedProfit - lockedProfitDiscount;
         lastProfitUpdate = block.timestamp;
         emit StrategyDebtUpdated(address(strategy), debtBefore, strategyDebt);
 
+        // Justification: Reentrancy is prevented because redeemInKind is protected by nonReentrant.
+        // State changes after this call (_lastEligible tracking) are benign tracking states.
+        // slither-disable-next-line reentrancy-no-eth,reentrancy-benign,reentrancy-events
         InKindRedemptionResult memory strategyResult =
             inKindStrategy.redeemInKind(shares, debtReduction, receiver, maxLossBps);
         if (!_validInKindResult(preview, strategyResult, maxLossBps)) revert InKindRedemptionMismatch();
