@@ -640,7 +640,7 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events, IRo
 
         address recipient = currentAccountant.feeRecipient();
         if (recipient == address(0)) revert ZeroAddress();
-        
+
         _ensureLiquidity(totalFee, Constants.MAX_BPS);
         IERC20(asset()).safeTransfer(recipient, totalFee);
         emit ProtocolFeesCollected(recipient, performanceFee, managementFee);

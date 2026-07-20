@@ -69,12 +69,7 @@ abstract contract StrategyBase is IRobinStrategy, AccessManaged, ReentrancyGuard
         emit FundsDeployed(amount);
     }
 
-    function freeFunds(uint256 amount)
-        external
-        override
-        onlyVault
-        returns (uint256 amountFreed, uint256 loss)
-    {
+    function freeFunds(uint256 amount) external override onlyVault returns (uint256 amountFreed, uint256 loss) {
         if (amount == 0) revert ZeroAmount();
         uint256 idleBefore = _asset.balanceOf(address(this));
         if (idleBefore < amount) {
