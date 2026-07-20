@@ -1,6 +1,18 @@
 # Robin Harvest Contracts
 
+![Solidity](https://img.shields.io/badge/Solidity-0.8.25-blue)
+![Foundry](https://img.shields.io/badge/Foundry-v1.9.7-orange)
+![License](https://img.shields.io/badge/License-MIT-green)
+![Version](https://img.shields.io/badge/Version-v0.1.0--alpha-purple)
+
 Foundry workspace for Robin Harvest, an ERC-4626 yield optimizer targeting Robinhood Chain and Index Finance (INDEX).
+
+## Version & Audit Status
+
+**Current Version:** `v0.1.0-alpha`  
+**Status:** Feature Complete / Pre-Audit
+
+> ⚠️ **Audit Status:** No external audit has been completed. The protocol should be considered experimental until the launch checklist is fully satisfied.
 
 ## Production Readiness
 
@@ -12,6 +24,25 @@ Current repository status:
 ⚠️ External integrations pending
 ⚠️ External audit pending
 ❌ Not approved for production deployment
+
+## Quick Start
+
+```bash
+git clone https://github.com/Robin-Harvest/robin-harvest-contracts.git
+cd robin-harvest-contracts
+
+# Install dependencies
+forge install
+
+# Compile contracts
+forge build
+
+# Run test suite
+forge test
+
+# Run static analysis
+slither .
+```
 
 ## Status
 
@@ -40,19 +71,31 @@ Current repository status:
 - Profit smoothing
 - AccessManager-based governance
 
+## Supported Standards
+
+- **ERC-20**: Standard token integration for all assets and rewards.
+- **ERC-4626**: Tokenized vault standard for deposits and redemptions.
+- **EIP-170**: Compliant runtime bytecode size for all deployed contracts.
+
 ## Protocol Flow
 
 ```mermaid
 flowchart TD
-    Depositor[Depositor] -->|Deposit INDEX| Vault[RobinVault]
-    Vault -->|Deploy Funds| StrategyBase[CoreStrategy / GrowthStrategy]
-    StrategyBase -->|Supply| IndexFinance[Index Finance]
-    IndexFinance -->|Yield| StrategyBase
-    StrategyBase -->|Harvest / Swap| Router[ExecutionRouter]
-    StrategyBase -->|Retain| Portfolio[Growth Portfolio]
+    Depositor --> RobinVault
+    RobinVault --> Strategy
+    
+    Strategy --> IndexFinance
+    
+    Strategy --> ExecutionRouter
+    ExecutionRouter --> DEX
+    
+    Strategy --> OracleRegistry
+    Strategy --> RewardRegistry
+    
+    Strategy --> Portfolio
     
     %% Optional in-kind redemption flow
-    Vault -.->|redeemInKind| Portfolio
+    RobinVault -. redeemInKind .-> Portfolio
 ```
 
 ### Redemption UX
@@ -139,3 +182,7 @@ Deployment consists of:
 7. Production enablement
 
 See [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md) for launch procedures.
+
+## License
+
+MIT
