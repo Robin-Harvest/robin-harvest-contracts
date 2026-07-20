@@ -2,7 +2,16 @@
 
 Foundry workspace for Robin Harvest, an ERC-4626 yield optimizer targeting Robinhood Chain and Index Finance (INDEX).
 
-> **Warning:** This repository is unaudited. Do not deploy to production until external audit completion and all launch gates in the Final Architecture are satisfied.
+## Production Readiness
+
+Current repository status:
+✅ Feature complete
+✅ Integration tests
+✅ Invariant tests
+✅ Slither
+⚠️ External integrations pending
+⚠️ External audit pending
+❌ Not approved for production deployment
 
 ## Status
 
@@ -14,17 +23,100 @@ Foundry workspace for Robin Harvest, an ERC-4626 yield optimizer targeting Robin
 | 10–11 | StrategyBase, CoreStrategy (provisional Index Finance ABI) | Complete |
 | 12–13 | GrowthStrategy (retention, liquidation order, conservative NAV, category policy) | Complete |
 | 14 | Optional In-Kind Redemption UX, integration, and system tests | Complete |
-| 15 | Deployment scripts and operational docs | Complete (pending live addresses) |
+| 15 | Deployment scripts and operational docs | Implementation complete. Production deployment remains blocked on final external protocol parameters (official Index Finance contracts, production oracle feeds, DEX routes, governance configuration, and external audit). |
 
-**Not in scope for this repository yet:** INDEX-ETH LP strategy (blocked on LP type confirmation), live Index Finance ABI finalization, production oracle/DEX addresses.
+## Features
 
-## Toolchain
+- ERC-4626 compliant vault architecture
+- Core and Growth yield strategies
+- Oracle-backed reward valuation
+- Constrained execution router
+- Configurable reward registry
+- Conservative NAV accounting
+- Category exposure enforcement
+- Optional in-kind redemption
+- Performance + management fee accounting
+- Timelocked strategy migration
+- Profit smoothing
+- AccessManager-based governance
 
-- Foundry
-- Solidity `0.8.25`
-- EVM target `paris`
+## Protocol Flow
+
+```mermaid
+flowchart TD
+    Depositor[Depositor] -->|Deposit INDEX| Vault[RobinVault]
+    Vault -->|Deploy Funds| StrategyBase[CoreStrategy / GrowthStrategy]
+    StrategyBase -->|Supply| IndexFinance[Index Finance]
+    IndexFinance -->|Yield| StrategyBase
+    StrategyBase -->|Harvest / Swap| Router[ExecutionRouter]
+    StrategyBase -->|Retain| Portfolio[Growth Portfolio]
+    
+    %% Optional in-kind redemption flow
+    Vault -.->|redeemInKind| Portfolio
+```
+
+### Redemption UX
+- **Standard ERC4626 `redeem()`**: INDEX only (liquidates retained assets as necessary).
+- **Optional `redeemInKind()`**: Proportional INDEX + retained stock rewards.
+
+## Security Assumptions
+
+Robin Harvest assumes:
+- trusted governance
+- approved reward tokens
+- approved oracle feeds
+- approved DEX adapters
+- standard ERC20 retained assets
+- non-malicious external protocols
+
+**Explicitly Unsupported:**
+- fee-on-transfer tokens
+- rebasing tokens
+- ERC777
+- callback-enabled wrappers
+- transfer-tax tokens
+
+## External Audit Scope
+
+The intended external audit includes:
+- Vault accounting
+- Strategy accounting
+- Oracle integration
+- Reward processing
+- Execution router
+- In-kind redemption
+- Fee accounting
+- Strategy migration
+
+## Launch Checklist
+
+Before production:
+- [ ] Official Index Finance ABI
+- [ ] Production oracle feeds
+- [ ] Production DEX routes
+- [ ] Governance multisig
+- [ ] Timelock configuration
+- [ ] Mainnet fork tests
+- [ ] External audit
+- [ ] Audit remediation
+
+## Current Limitations
+
+- Provisional Index Finance integration.
+- Production addresses pending.
+- LP strategy not yet implemented (blocked on LP type confirmation).
+
+## Toolchain & Tests
+
+- Foundry (Solidity `0.8.25`, EVM target `paris`)
 - OpenZeppelin Contracts `v5.6.1`
 - forge-std `v1.9.7`
+
+Current repository test suite includes:
+- Unit tests
+- Integration tests
+- Stateful invariant tests
+- Fuzz tests
 
 ## Commands
 
@@ -33,35 +125,17 @@ forge fmt --check
 forge build --sizes
 forge test
 ```
-
 CI runs formatting, build with size report, tests, and Slither.
 
-## Architecture
+## Deployment
 
-- **RobinVault:** asset-agnostic ERC-4626 accounting, debt, profit smoothing, eligibility hooks, optional in-kind redemption coordination, timelocked strategy migration, fee integration.
-- **CoreStrategy / GrowthStrategy:** isolated harvest strategies; Growth owns portfolio retention, exposure, liquidation, and in-kind payouts.
-- **Registries + Router:** governance-configured oracles, reward policies, and constrained swaps (no arbitrary calldata).
-- **RobinAccountant:** performance fees with high-water mark and annualized management fees.
+Deployment consists of:
+1. Deploy contracts
+2. Governance initialization
+3. Registry configuration
+4. Strategy wiring
+5. Deployment verification
+6. Testnet validation
+7. Production enablement
 
-See [DESIGN.md](./DESIGN.md) for in-kind redemption details and [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md) for launch procedures.
-
-## Open integration blockers
-
-Resolve and document each item in [OPEN_QUESTIONS.md](./OPEN_QUESTIONS.md) before mainnet launch, especially:
-
-- Official Index Finance distributor ABI and eligibility semantics
-- Robinhood Chain DEX router and liquidity
-- Oracle feeds for INDEX and each tokenized stock
-- Governance multisig, timelock durations, and fee schedule
-
-## Repository layout
-
-- `src/access/` — AccessManager
-- `src/accounting/` — RobinAccountant
-- `src/adapters/` — DEX adapters
-- `src/registries/` — Oracle and reward registries
-- `src/router/` — ExecutionRouter
-- `src/strategies/` — StrategyBase, CoreStrategy, GrowthStrategy
-- `src/vaults/` — RobinVault
-- `test/` — unit, integration, and invariant tests
-- `script/` — deployment scripts
+See [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md) for launch procedures.
