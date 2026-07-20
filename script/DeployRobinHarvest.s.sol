@@ -2,6 +2,7 @@
 pragma solidity 0.8.25;
 
 import {Script} from "forge-std/Script.sol";
+import {console2} from "forge-std/console2.sol";
 import {AccessManager} from "../src/access/AccessManager.sol";
 import {RobinAccountant} from "../src/accounting/RobinAccountant.sol";
 import {ExecutionRouter} from "../src/router/ExecutionRouter.sol";
@@ -26,15 +27,35 @@ contract DeployRobinHarvest is Script {
         uint256 strategyMigrationDelay;
     }
 
-    function run() external {
+    struct DeploymentAddresses {
+        AccessManager manager;
+        OracleRegistry oracleRegistry;
+        RewardRegistry rewardRegistry;
+        ExecutionRouter router;
+        RobinAccountant coreAccountant;
+        RobinAccountant growthAccountant;
+        RobinVault coreVault;
+        CoreStrategy coreStrategy;
+        RobinVault growthVault;
+        GrowthStrategy growthStrategy;
+    }
+
+    function run() external returns (DeploymentAddresses memory deployed) {
         DeploymentConfig memory config = _loadConfig();
         vm.startBroadcast();
+        deployed = _deploy(config);
+        vm.stopBroadcast();
 
+        _logDeployment(deployed);
+    }
+
+    function _deploy(DeploymentConfig memory config) internal returns (DeploymentAddresses memory deployed) {
         AccessManager manager = new AccessManager(config.governance);
         OracleRegistry oracleRegistry = new OracleRegistry(address(manager));
         RewardRegistry rewardRegistry = new RewardRegistry(address(manager));
         ExecutionRouter router = new ExecutionRouter(address(manager), oracleRegistry);
-        RobinAccountant accountant = new RobinAccountant(IERC20(config.indexToken), address(manager));
+        RobinAccountant coreAccountant = new RobinAccountant(IERC20(config.indexToken), address(manager));
+        RobinAccountant growthAccountant = new RobinAccountant(IERC20(config.indexToken), address(manager));
 
         RobinVault coreVault =
             new RobinVault(IERC20(config.indexToken), "Robin INDEX Core Vault", "rhINDEX-C", address(manager));
@@ -64,16 +85,18 @@ contract DeployRobinHarvest is Script {
             config.swapDeadlineDelay
         );
 
-        coreVault.setStrategy(address(coreStrategy));
-        growthVault.setStrategy(address(growthStrategy));
-        coreVault.setEligibilityThreshold(config.eligibilityThreshold);
-        growthVault.setEligibilityThreshold(config.eligibilityThreshold);
-        coreVault.setStrategyMigrationDelay(config.strategyMigrationDelay);
-        growthVault.setStrategyMigrationDelay(config.strategyMigrationDelay);
-        accountant.setVault(address(coreVault));
-        accountant.setFeeRecipient(config.governance);
-
-        vm.stopBroadcast();
+        deployed = DeploymentAddresses({
+            manager: manager,
+            oracleRegistry: oracleRegistry,
+            rewardRegistry: rewardRegistry,
+            router: router,
+            coreAccountant: coreAccountant,
+            growthAccountant: growthAccountant,
+            coreVault: coreVault,
+            coreStrategy: coreStrategy,
+            growthVault: growthVault,
+            growthStrategy: growthStrategy
+        });
     }
 
     function _loadConfig() internal view returns (DeploymentConfig memory config) {
@@ -84,5 +107,18 @@ contract DeployRobinHarvest is Script {
         config.swapDeadlineDelay = uint48(vm.envUint("SWAP_DEADLINE_DELAY"));
         config.eligibilityThreshold = vm.envUint("ELIGIBILITY_THRESHOLD");
         config.strategyMigrationDelay = vm.envUint("STRATEGY_MIGRATION_DELAY");
+    }
+
+    function _logDeployment(DeploymentAddresses memory deployed) private pure {
+        console2.log("ACCESS_MANAGER_ADDRESS=", address(deployed.manager));
+        console2.log("ORACLE_REGISTRY_ADDRESS=", address(deployed.oracleRegistry));
+        console2.log("REWARD_REGISTRY_ADDRESS=", address(deployed.rewardRegistry));
+        console2.log("EXECUTION_ROUTER_ADDRESS=", address(deployed.router));
+        console2.log("CORE_ACCOUNTANT_ADDRESS=", address(deployed.coreAccountant));
+        console2.log("GROWTH_ACCOUNTANT_ADDRESS=", address(deployed.growthAccountant));
+        console2.log("CORE_VAULT_ADDRESS=", address(deployed.coreVault));
+        console2.log("CORE_STRATEGY_ADDRESS=", address(deployed.coreStrategy));
+        console2.log("GROWTH_VAULT_ADDRESS=", address(deployed.growthVault));
+        console2.log("GROWTH_STRATEGY_ADDRESS=", address(deployed.growthStrategy));
     }
 }
