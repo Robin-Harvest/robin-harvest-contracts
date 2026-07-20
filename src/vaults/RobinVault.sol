@@ -246,6 +246,8 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events, IRo
         return _redeemInKindWithMaxLoss(shares, receiver, owner, maxLossBps);
     }
 
+    // Justification: In-kind redemption inherently requires multiple validation checks (shares, bounds, math mismatches). Breaking this into smaller internal methods increases stack pressure and gas overhead without meaningfully improving readability.
+    // slither-disable-next-line cyclomatic-complexity
     function _redeemInKindWithMaxLoss(uint256 shares, address receiver, address owner, uint16 maxLossBps)
         private
         returns (InKindRedemptionResult memory result)
