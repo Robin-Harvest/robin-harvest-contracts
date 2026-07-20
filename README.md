@@ -13,7 +13,7 @@ Foundry workspace for Robin Harvest, an ERC-4626 yield optimizer targeting Robin
 | 7–9 | OracleRegistry, RewardRegistry, ExecutionRouter | Complete |
 | 10–11 | StrategyBase, CoreStrategy (provisional Index Finance ABI) | Complete |
 | 12–13 | GrowthStrategy (retention, liquidation order, conservative NAV, category policy) | Complete |
-| 14 | Unit, fuzz, integration, and invariant tests | Complete (Core/Growth scope) |
+| 14 | Optional In-Kind Redemption UX, integration, and system tests | Complete |
 | 15 | Deployment scripts and operational docs | Complete (pending live addresses) |
 
 **Not in scope for this repository yet:** INDEX-ETH LP strategy (blocked on LP type confirmation), live Index Finance ABI finalization, production oracle/DEX addresses.
