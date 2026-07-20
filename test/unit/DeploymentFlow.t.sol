@@ -11,7 +11,13 @@ import {OracleRegistry} from "../../src/registries/OracleRegistry.sol";
 import {RewardRegistry} from "../../src/registries/RewardRegistry.sol";
 import {StrategyBase} from "../../src/strategies/StrategyBase.sol";
 import {RobinVault} from "../../src/vaults/RobinVault.sol";
-import {FeeConfig, OracleConfig, RewardCategory, RewardDisposition, RewardTokenConfig} from "../../src/types/ProtocolTypes.sol";
+import {
+    FeeConfig,
+    OracleConfig,
+    RewardCategory,
+    RewardDisposition,
+    RewardTokenConfig
+} from "../../src/types/ProtocolTypes.sol";
 import {MockINDEX} from "../mocks/MockINDEX.sol";
 import {MockIndexFinanceCore} from "../mocks/MockIndexFinanceCore.sol";
 import {MockOracle} from "../mocks/MockOracle.sol";
@@ -132,10 +138,7 @@ contract DeploymentFlowTest is Test {
         validateHarness.validatePublic(config);
     }
 
-    function _deploy(address governance)
-        private
-        returns (DeployRobinHarvest.DeploymentAddresses memory deployed)
-    {
+    function _deploy(address governance) private returns (DeployRobinHarvest.DeploymentAddresses memory deployed) {
         deployed = deployHarness.deployPublic(
             DeployRobinHarvest.DeploymentConfig({
                 governance: governance,

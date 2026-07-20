@@ -81,21 +81,32 @@ contract ValidateRobinHarvest is Script, ConfigureRobinHarvest {
 
         _canCall(manager, config.roles.keeper, config.addresses.coreStrategy, StrategyBase.harvest.selector);
         _canCall(manager, config.roles.keeper, config.addresses.growthStrategy, StrategyBase.harvest.selector);
-        _canCall(manager, config.roles.rewardManager, config.addresses.coreStrategy, StrategyBase.addRewardToken.selector);
+        _canCall(
+            manager, config.roles.rewardManager, config.addresses.coreStrategy, StrategyBase.addRewardToken.selector
+        );
         _canCall(
             manager, config.roles.rewardManager, config.addresses.growthStrategy, StrategyBase.addRewardToken.selector
         );
         _canCall(manager, config.roles.securityCouncil, config.addresses.coreStrategy, StrategyBase.pause.selector);
         _canCall(manager, config.roles.securityCouncil, config.addresses.growthStrategy, StrategyBase.pause.selector);
         _canCall(
-            manager, config.roles.strategyManager, config.addresses.growthStrategy, GrowthStrategy.setNavHaircutBps.selector
+            manager,
+            config.roles.strategyManager,
+            config.addresses.growthStrategy,
+            GrowthStrategy.setNavHaircutBps.selector
         );
 
         _canCall(
-            manager, config.roles.oracleManager, config.addresses.oracleRegistry, OracleRegistry.setOracleConfig.selector
+            manager,
+            config.roles.oracleManager,
+            config.addresses.oracleRegistry,
+            OracleRegistry.setOracleConfig.selector
         );
         _canCall(
-            manager, config.roles.rewardManager, config.addresses.rewardRegistry, RewardRegistry.setRewardTokenConfig.selector
+            manager,
+            config.roles.rewardManager,
+            config.addresses.rewardRegistry,
+            RewardRegistry.setRewardTokenConfig.selector
         );
         _canCall(manager, config.roles.strategyManager, config.addresses.router, ExecutionRouter.setRoute.selector);
     }
@@ -149,8 +160,7 @@ contract ValidateRobinHarvest is Script, ConfigureRobinHarvest {
             revert WiringMismatch("FEE_RECIPIENT", feeRecipient_, accountant.feeRecipient());
         }
         (uint16 performanceBps, uint16 managementBps) = accountant.feeConfig();
-        FeeConfig memory actualFeeConfig =
-            FeeConfig({performanceBps: performanceBps, managementBps: managementBps});
+        FeeConfig memory actualFeeConfig = FeeConfig({performanceBps: performanceBps, managementBps: managementBps});
         if (
             actualFeeConfig.performanceBps != feeConfig_.performanceBps
                 || actualFeeConfig.managementBps != feeConfig_.managementBps
