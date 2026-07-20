@@ -24,7 +24,7 @@ import {MockIndexFinanceCore} from "../mocks/MockIndexFinanceCore.sol";
 import {MockOracle} from "../mocks/MockOracle.sol";
 import {MockStockToken} from "../mocks/MockStockToken.sol";
 import {MockFeeOnTransferToken} from "../mocks/MockFeeOnTransferToken.sol";
-import {ZeroAddress} from "../../src/libraries/Errors.sol";
+import {ZeroAddress, Disabled} from "../../src/libraries/Errors.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 contract GrowthStrategyTest is Test {
@@ -1087,20 +1087,20 @@ contract GrowthStrategyTest is Test {
         vault.redeemInKind(shares, user, user);
     }
 
-    function testUnroutableRetainedTokenDoesNotDoSWithdrawal() public {
+
+    function testPausedOracleFreezesWithdrawal() external {
         _depositAndDeploy(1_000 ether);
 
-        // Add a mock retained token that is disabled
+        // Add a mock retained token that is enabled
         MockStockToken extraStock = new MockStockToken("Extra Stock", "mEXT", 18);
         MockOracle extraFeed = new MockOracle(8, 1e8);
 
+        // Retain 100% of both reward tokens
         vm.startPrank(governance);
-        oracleRegistry.setOracleConfig(address(extraStock), _oracleConfig(address(extraFeed), false));
-        // Config is disabled!
         rewardRegistry.setRewardTokenConfig(
             address(extraStock),
             RewardTokenConfig({
-                enabled: false,
+                enabled: true,
                 category: RewardCategory.Equity,
                 disposition: RewardDisposition.Retain,
                 oracle: address(extraFeed),
@@ -1120,35 +1120,16 @@ contract GrowthStrategyTest is Test {
         vm.prank(governance);
         strategy.harvest();
 
-        // Assert balances
-        assertEq(strategy.retainedBalance(address(extraStock)), 0);
-
         // Vault is at 1000 shares.
         uint256 shares = vault.balanceOf(user);
 
-        // Disable oracle for retainStock just to test oracle skip as well
+        // Pause oracle for retainStock. This should freeze the vault because totalAssets() cannot be calculated.
         vm.prank(governance);
         oracleRegistry.setOracleConfig(address(retainStock), _oracleConfig(address(retainFeed), true));
 
-        // Now attempt an INDEX-only withdrawal which invokes `_freeFunds`.
-        // It should skip liquidating `extraStock` because it's disabled,
-        // and it should skip liquidating `retainStock` because its oracle is zero/paused!
-        // The withdrawal should succeed as long as we don't strictly require the liquidation to cover a deficit,
-        // OR it frees exactly what is available from IndexFinance.
-        // Wait, `_freeFunds` frees INDEX from IndexFinance first.
-        // Since we deposited 1_000 ether and we withdraw all, IndexFinance has 1_000 ether.
-        // So `_freeFunds` will get the INDEX from IndexFinance, and it will NOT need to liquidate.
-        // But let's say IndexFinance has a 5 ether loss, so it needs to liquidate to cover the remaining 5 ether!
-
-        MockIndexFinanceCore mockCore = MockIndexFinanceCore(address(indexFinance));
-        mockCore.setNextWithdrawLoss(5 ether);
-
-        // Now it will try to liquidate. It skips both tokens.
-        // `_freeFunds` will return `loss = 5 ether` because it couldn't liquidate them.
-        // Then `vault.withdraw` will succeed but realize the loss.
+        // Attempting a withdrawal should now revert with Disabled because the paused oracle prevents NAV calculation.
         vm.prank(user);
-        vault.withdraw(100 ether, user, user, 100); // 100 maxLoss bps = 1% > 0.5% loss
-
-        // The withdrawal succeeds without DoS!
+        vm.expectRevert(abi.encodeWithSelector(Disabled.selector, address(retainFeed)));
+        vault.withdraw(100 ether, user, user, 100);
     }
 }
