@@ -102,6 +102,13 @@ flowchart TD
 - **Standard ERC4626 `redeem()`**: INDEX only (liquidates retained assets as necessary).
 - **Optional `redeemInKind()`**: Proportional INDEX + retained stock rewards.
 
+## Backward Compatibility & Gas Impact
+
+The implementation is structured as an optional extension and does not modify or disrupt existing core accounting:
+- Standard ERC4626 deposits and withdrawals remain unaffected.
+- The CoreStrategy, Harvest pipeline, and Reward processing flow identically.
+- Gas overhead is strictly isolated to the users who opt-in to `redeemInKind()`, meaning standard users pay no additional penalty.
+
 ## Security Assumptions
 
 Robin Harvest assumes:
@@ -143,10 +150,12 @@ Before production:
 - [ ] External audit
 - [ ] Audit remediation
 
-## Current Limitations
+## Current Limitations & External Integrations
 
-- Provisional Index Finance integration.
-- Production addresses pending.
+Current implementation assumes:
+- Official Index Finance integration is still provisional.
+- Production oracle addresses are not finalized.
+- Production DEX routes remain external configuration.
 - LP strategy not yet implemented (blocked on LP type confirmation).
 
 ## Toolchain & Tests
@@ -168,7 +177,9 @@ forge fmt --check
 forge build --sizes
 forge test
 ```
-CI runs formatting, build with size report, tests, and Slither.
+CI runs formatting, build with size report, tests, and Slither. 
+
+> **Note on EIP-170**: `GrowthStrategy` and all other core contracts remain below the EIP-170 runtime size limit (24.576 kb) after implementation. Deployment sizes are continuously verified in CI using `forge build --sizes`.
 
 ## Deployment
 
