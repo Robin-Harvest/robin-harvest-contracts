@@ -1,0 +1,62 @@
+# Protocol Architecture (High Level)
+
+Copy for PDF export. Embedded copy in [06-architecture.md](../06-architecture.md).
+
+```mermaid
+flowchart TB
+    subgraph Users
+        D[Depositors]
+        W[Withdrawers]
+    end
+
+    subgraph VaultLayer["Vault Layer"]
+        RV[RobinVault ERC-4626]
+        ACC[RobinAccountant]
+    end
+
+    subgraph StrategyLayer["Strategy Layer"]
+        CS[CoreStrategy]
+        GS[GrowthStrategy]
+    end
+
+    subgraph Policy["Policy & Execution"]
+        OR[OracleRegistry]
+        RR[RewardRegistry]
+        ER[ExecutionRouter]
+        DEX[UniswapV2DexAdapter]
+    end
+
+    subgraph External["External"]
+        IF[Index Finance]
+        FEEDS[Price Feeds]
+        POOL[DEX Pools]
+    end
+
+    subgraph Gov["Governance"]
+        AM[AccessManager]
+    end
+
+    D -->|deposit INDEX| RV
+    W -->|withdraw / redeemInKind| RV
+    RV --> ACC
+    RV <-->|report| CS
+    RV <-->|report| GS
+    CS --> IF
+    GS --> IF
+    CS --> ER
+    GS --> ER
+    ER --> DEX
+    DEX --> POOL
+    CS --> RR
+    GS --> RR
+    CS --> OR
+    GS --> OR
+    ER --> OR
+    OR --> FEEDS
+    AM -.->|restricted| RV
+    AM -.->|restricted| CS
+    AM -.->|restricted| GS
+    AM -.->|restricted| OR
+    AM -.->|restricted| RR
+    AM -.->|restricted| ER
+```

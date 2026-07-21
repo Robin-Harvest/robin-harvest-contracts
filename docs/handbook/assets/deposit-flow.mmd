@@ -1,0 +1,19 @@
+# Deposit Flow
+
+See [08-execution-flows.md](../08-execution-flows.md).
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant V as RobinVault
+    participant I as INDEX ERC20
+
+    User->>V: deposit(assets, receiver)
+    Note over V: nonReentrant
+    V->>V: maxDeposit check
+    V->>V: previewDeposit → shares
+    V->>I: transferFrom(User, Vault, assets)
+    V->>V: mint(receiver, shares)
+    V->>V: _updateEligibilityTracking()
+    V-->>User: shares
+```

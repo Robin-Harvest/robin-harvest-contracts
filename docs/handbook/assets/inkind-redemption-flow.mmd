@@ -1,0 +1,28 @@
+# In-Kind Redemption Flow
+
+Authoritative sequence from DESIGN.md and RobinVault/GrowthStrategy implementation.
+
+```mermaid
+sequenceDiagram
+    actor Owner
+    participant V as RobinVault
+    participant G as GrowthStrategy
+    participant R as Receiver
+
+    Owner->>V: redeemInKind(shares, receiver, owner)
+    V->>V: validate shares, receiver, maxRedeem
+    V->>G: previewInKindRedemption(shares)
+    G-->>V: preview
+    V->>V: burn shares, reduce strategyDebt & lockedProfit
+    V->>G: redeemInKind(shares, debtReduction, receiver, maxLossBps)
+    G->>G: update retainedBalance, refresh exposure
+    opt need deployed INDEX
+        G->>G: _freeFunds (maxLoss check)
+    end
+    G->>R: transfer retained tokens
+    G->>V: transfer INDEX to vault
+    G-->>V: actual result
+    V->>V: verify preview vs actual
+    V->>R: transfer net INDEX
+    V-->>Owner: InKindRedeem event
+```

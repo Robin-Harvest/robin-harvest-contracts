@@ -1,0 +1,29 @@
+# Harvest Flow
+
+See [08-execution-flows.md](../08-execution-flows.md).
+
+```mermaid
+sequenceDiagram
+    actor Keeper
+    participant S as StrategyBase
+    participant IF as Index Finance
+    participant RR as RewardRegistry
+    participant ER as ExecutionRouter
+    participant V as RobinVault
+
+    Keeper->>S: harvest()
+    S->>IF: claimRewards
+    loop each reward token
+        S->>S: try processRewardToken
+        S->>RR: getRewardTokenConfig
+        alt Sell
+            S->>ER: swapExactInput
+        else Retain Growth only
+            S->>S: _retainRewardAmount
+        end
+    end
+    S->>S: totalAssets delta → HarvestReport
+    S->>V: transfer debtPayment INDEX
+    S->>V: report(HarvestReport)
+    V->>V: update debt, lockedProfit, fees
+```
