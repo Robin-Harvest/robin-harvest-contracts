@@ -299,7 +299,7 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events, IRo
         if (maxLossBps > Constants.MAX_BPS) revert InvalidBasisPoints(maxLossBps);
         if (shares == 0) revert ZeroShares();
         if (receiver == address(0)) revert ZeroAddress();
-        if (shares > maxRedeem(owner)) revert ERC4626ExceededMaxRedeem(owner, shares, maxRedeem(owner));
+        if (shares > balanceOf(owner)) revert ERC4626ExceededMaxRedeem(owner, shares, balanceOf(owner));
 
         IInKindRedemptionStrategy inKindStrategy = _inKindStrategy();
         uint256 supplyBefore = totalSupply();
