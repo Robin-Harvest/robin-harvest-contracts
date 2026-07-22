@@ -67,6 +67,7 @@ flowchart TB
 | **StrategyBase** | `src/strategies/StrategyBase.sol` | Abstract lifecycle, harvest loop, vault-only capital |
 | **CoreStrategy** | `src/strategies/CoreStrategy.sol` | Index Finance deploy/withdraw/claim/sell |
 | **GrowthStrategy** | `src/strategies/GrowthStrategy.sol` | Retention, exposure, liquidation order, in-kind |
+| **LpStrategy** | `src/strategies/LpStrategy.sol` | DEX LP provisioning, Gauge staking, optimal swap, auto-compounding |
 | **OracleRegistry** | `src/registries/OracleRegistry.sol` | Feed validation, normalization |
 | **RewardRegistry** | `src/registries/RewardRegistry.sol` | Token allowlist, disposition, adapters |
 | **ExecutionRouter** | `src/router/ExecutionRouter.sol` | Approved adapter/route swaps |
@@ -88,10 +89,13 @@ flowchart LR
     R[ExecutionRouter]
     CA[Core Accountant]
     GA[Growth Accountant]
+    LA[LP Accountant]
     CV[Core Vault]
     CS[Core Strategy]
     GV[Growth Vault]
     GS[Growth Strategy]
+    LV[LP Vault]
+    LS[LP Strategy]
 
     AM --> OR
     AM --> RR
@@ -99,23 +103,30 @@ flowchart LR
     OR --> R
     AM --> CA
     AM --> GA
+    AM --> LA
     AM --> CV
     AM --> CS
     AM --> GV
     AM --> GS
+    AM --> LV
+    AM --> LS
 
     CV --- CS
     GV --- GS
+    LV --- LS
     CS --> RR
     CS --> OR
     CS --> R
     GS --> RR
     GS --> OR
     GS --> R
+    LS --> RR
+    LS --> OR
+    LS --> R
 ```
 
 **Shared:** manager, oracle, reward registry, router  
-**Per product:** vault, strategy, accountant
+**Per product:** vault, strategy, accountant (Core, Growth, LP)
 
 Post-deploy wiring: `ConfigureRobinHarvest.s.sol` — strategy, accountant, roles, oracles, rewards, routes.
 
@@ -204,6 +215,9 @@ Detailed sequences in [08-execution-flows.md](./08-execution-flows.md):
 - Redeem In Kind
 - Harvest + Report + Fees
 - Strategy deploy / deployIdle
+- LP Deploy (optimal swap → add liquidity → gauge stake)
+- LP Withdraw (gauge unstake → remove liquidity → swap paired → INDEX)
+- LP Harvest (claim gauge rewards → sell → optimal swap → re-pool → re-stake)
 - DEX swap path
 - Emergency recovery
 - Strategy migration timelock
@@ -220,6 +234,8 @@ Formulas in [09-mathematics.md](./09-mathematics.md):
 - Retained NAV valuation
 - Exposure BPS
 - In-kind pro-rata floor rounding
+- Optimal single-sided LP swap amount
+- Mark-to-market LP token valuation
 
 ---
 

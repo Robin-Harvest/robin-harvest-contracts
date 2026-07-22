@@ -299,3 +299,62 @@ else 0
 ---
 
 **Next:** [08-contracts/README.md](./08-contracts/README.md)
+
+---
+
+## 9.17 Optimal Single-Sided LP Swap Amount
+
+From `LpStrategy._optimalSwapAmount`:
+
+Given a pool with reserves $(R_{\text{index}})$ and a single-sided deposit amount $A$ in INDEX, the exact amount $s$ to swap (so remaining INDEX + received paired token match the pool ratio exactly) is:
+
+```
+s = (sqrt(1997² × R² + 3996000 × R × A) − 1997 × R) / 1998
+```
+
+Where `1997 = 2 × 997 + 3` and the 997/1000 factor accounts for the standard 0.30% DEX swap fee.
+
+### Worked example
+
+- Pool: `R_index = 100_000 INDEX`, deposit = 10_000 INDEX
+
+```
+discriminant = 1997² × 100000² + 3996000 × 100000 × 10000
+             = 3.988009e14 + 3.996e15
+             = 4.39480e15
+sqrt(discriminant) ≈ 66,293,288
+s ≈ (66_293_288 − 199_700_000) / 1998 ... (simplified)
+≈ 4878 INDEX   (slightly less than 50%)
+```
+
+The remaining `10000 − 4878 = 5122 INDEX` and the received paired tokens are deposited into the pool with zero leftovers.
+
+---
+
+## 9.18 Mark-to-Market LP Token Valuation
+
+From `LpStrategy.deployedAssets`:
+
+```
+totalPoolValueIndex = reserveIndex + reservePaired × pricePaired / 1e18
+deployedAssets = stakedLpBalance × totalPoolValueIndex / lpTotalSupply
+```
+
+Where:
+- `reserveIndex`, `reservePaired` = current pool reserves (from `IUniswapV2Pair.getReserves()`)
+- `pricePaired` = oracle price of paired token denominated in INDEX (from `OracleRegistry`)
+- `stakedLpBalance` = LP tokens staked in Gauge
+- `lpTotalSupply` = total supply of the LP token
+
+### Worked example
+
+- Pool reserves: 50,000 INDEX + 50,000 AAPL
+- Oracle: AAPL = 2.0 INDEX (i.e., `2e18`)
+- LP totalSupply = 100,000; strategy holds 10,000 LP
+
+```
+totalPoolValueIndex = 50000 + 50000 × 2.0 = 150,000 INDEX
+deployedAssets = 10000 × 150000 / 100000 = 15,000 INDEX
+```
+
+

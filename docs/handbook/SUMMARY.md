@@ -13,17 +13,18 @@ Read chapters in order for a complete education from zero to protocol expert.
 
 ## Part II — The Robin Harvest System
 
-5. **[Project Overview](./05-project-overview.md)** — Problem statement, products (Core vs Growth), trust model, limitations, open questions
+5. **[Project Overview](./05-project-overview.md)** — Problem statement, products (Core vs Growth vs LP), trust model, limitations, open questions
 6. **[Architecture](./06-architecture.md)** — System diagram, component responsibilities, ownership, lifecycle, dependency graph
+
 7. **[Repository Walkthrough](./07-repository-walkthrough.md)** — Every directory, file, and configuration explained
 
 ## Part III — Deep Implementation
 
-8. **[Execution Flows](./08-execution-flows.md)** — Deposit, withdraw, redeem, in-kind redeem, harvest, fees, swaps, governance, emergency
-9. **[Mathematics](./09-mathematics.md)** — Share accounting, NAV, locked profit, high-water mark, fees, exposure, slippage — with worked examples
+8. **[Execution Flows](./08-execution-flows.md)** — Deposit, withdraw, redeem, in-kind redeem, harvest, fees, swaps, LP deploy/withdraw/harvest, governance, emergency
+9. **[Mathematics](./09-mathematics.md)** — Share accounting, NAV, locked profit, high-water mark, fees, exposure, slippage, optimal LP swap, LP valuation — with worked examples
 10. **[Contract Reference](./08-contracts/README.md)** — Contract-by-contract walkthrough
     - [RobinVault & ERC4626Paris](./08-contracts/vault.md)
-    - [StrategyBase, CoreStrategy, GrowthStrategy](./08-contracts/strategies.md)
+    - [StrategyBase, CoreStrategy, GrowthStrategy, LpStrategy](./08-contracts/strategies.md)
     - [OracleRegistry & RewardRegistry](./08-contracts/registries.md)
     - [ExecutionRouter & UniswapV2DexAdapter](./08-contracts/router-and-adapters.md)
     - [RobinAccountant & AccessManager](./08-contracts/accounting-and-access.md)

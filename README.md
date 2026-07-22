@@ -86,24 +86,32 @@ slither .
 flowchart TD
     Depositor --> RobinVault
     RobinVault --> Strategy
-    
+
     Strategy --> IndexFinance
-    
     Strategy --> ExecutionRouter
     ExecutionRouter --> DEX
-    
+
     Strategy --> OracleRegistry
     Strategy --> RewardRegistry
-    
+
     Strategy --> Portfolio
-    
+
+    %% LP Strategy flow
+    Strategy --> LpPair[DEX LP Pool]
+    LpPair --> Gauge[Gauge Staking]
+
     %% Optional in-kind redemption flow
     RobinVault -. redeemInKind .-> Portfolio
 ```
 
+### Strategy Products
+- **Core (`CoreStrategy`)**: Deposit INDEX into Index Finance → sell all rewards → compound.
+- **Growth (`GrowthStrategy`)**: Deposit INDEX into Index Finance → sell, retain, or ignore rewards → in-kind redemption.
+- **LP (`LpStrategy`)**: Optimal-ratio swap → add DEX liquidity → stake in Gauge → auto-compound rewards.
+
 ### Redemption UX
-- **Standard ERC4626 `redeem()`**: INDEX only (liquidates retained assets as necessary).
-- **Optional `redeemInKind()`**: Proportional INDEX + retained stock rewards.
+- **Standard ERC4626 `redeem()`**: INDEX only (liquidates retained assets or LP positions as necessary).
+- **Optional `redeemInKind()`** (Growth only): Proportional INDEX + retained stock rewards.
 
 ## Backward Compatibility & Gas Impact
 
