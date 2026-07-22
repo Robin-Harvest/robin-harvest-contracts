@@ -89,7 +89,7 @@ contract CoreStrategy is StrategyBase {
     }
 
     // Justification: Reentrancy is prevented by onlyVault modifier on callers in StrategyBase and nonReentrant in RobinVault.
-    // slither-disable-next-line reentrancy-benign,reentrancy-events
+    // slither-disable-next-line reentrancy-benign,reentrancy-events,reentrancy-balance
     function _deployFunds(uint256 amount) internal override {
         IERC20 assetToken = IERC20(asset());
         uint256 balanceBefore = assetToken.balanceOf(address(this));
@@ -104,7 +104,7 @@ contract CoreStrategy is StrategyBase {
     }
 
     // Justification: Reentrancy is prevented by onlyVault modifier on callers in StrategyBase and nonReentrant in RobinVault.
-    // slither-disable-next-line reentrancy-benign,reentrancy-events
+    // slither-disable-next-line reentrancy-benign,reentrancy-events,reentrancy-balance
     function _freeFunds(uint256 amount) internal virtual override returns (uint256 loss) {
         uint256 positionBefore = deployedAssets();
         uint256 requested = amount > positionBefore ? positionBefore : amount;
@@ -258,6 +258,8 @@ contract CoreStrategy is StrategyBase {
         deadline = uint48(rawDeadline);
     }
 
+    // Justification: Reentrancy is prevented by caller locks and vault protection.
+    // slither-disable-next-line reentrancy-benign,reentrancy-events,reentrancy-balance
     function _withdrawFromIndexFinance(uint256 amount, uint256 lossBasis) private returns (uint256 loss) {
         uint256 positionBefore = deployedAssets();
         uint256 balanceBefore = IERC20(asset()).balanceOf(address(this));

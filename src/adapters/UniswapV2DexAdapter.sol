@@ -29,6 +29,8 @@ contract UniswapV2DexAdapter is IDexAdapter, AccessManaged {
 
     mapping(address tokenIn => mapping(address tokenOut => address[])) private _customPaths;
 
+    // Justification: executionRouter_ is intentionally optional. Passing address(0) permits any caller for test environments.
+    // slither-disable-next-line missing-zero-check,zero-address
     constructor(IUniswapV2Router router_, address executionRouter_, address authority_) AccessManaged(authority_) {
         if (address(router_) == address(0) || authority_ == address(0)) revert ZeroAddress();
         router = router_;
@@ -68,7 +70,7 @@ contract UniswapV2DexAdapter is IDexAdapter, AccessManaged {
         uint256 balanceBefore = IERC20(tokenOut).balanceOf(recipient);
         // Justification: The return value of the router swap is captured to satisfy Slither,
         // but the actual amount received is verified using balance differences to account for fee-on-transfer.
-        // slither-disable-next-line unused-return
+        // slither-disable-next-line unused-return,reentrancy-balance,reentrancy-events
         router.swapExactTokensForTokens(amountIn, minAmountOut, path, recipient, deadline);
 
         IERC20(tokenIn).forceApprove(address(router), 0);

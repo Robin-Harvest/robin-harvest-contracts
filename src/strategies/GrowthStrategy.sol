@@ -134,7 +134,7 @@ contract GrowthStrategy is CoreStrategy, IInKindRedemptionStrategy {
     ///      behavior is unsupported unless a dedicated integration validates it.
     // Justification: lastReportedAssets is updated after external funds freeing.
     // The entire entry point is protected by nonReentrant in the vault and here.
-    // slither-disable-next-line reentrancy-no-eth,reentrancy-benign
+    // slither-disable-next-line reentrancy-no-eth,reentrancy-benign,reentrancy-events,reentrancy-balance
     function redeemInKind(uint256 shares, uint256 debtReduction, address receiver, uint16 maxLossBps)
         external
         override
@@ -374,7 +374,7 @@ contract GrowthStrategy is CoreStrategy, IInKindRedemptionStrategy {
     /// @dev Frees deployed INDEX first, then liquidates retained assets in governance order when INDEX is insufficient.
     // Justification: Reentrancy is prevented because withdraw/redeem are protected by nonReentrant in the vault,
     // and freeFunds is only callable by the vault and protected by nonReentrant in StrategyBase.
-    // slither-disable-next-line reentrancy-no-eth,reentrancy-benign,reentrancy-events
+    // slither-disable-next-line reentrancy-no-eth,reentrancy-benign,reentrancy-events,reentrancy-balance
     function _freeFunds(uint256 amount) internal override returns (uint256 loss) {
         uint256 balanceBefore = IERC20(asset()).balanceOf(address(this));
         loss = super._freeFunds(amount);
@@ -399,7 +399,8 @@ contract GrowthStrategy is CoreStrategy, IInKindRedemptionStrategy {
                 emit RetainedTokenSkipped(token, "Disabled or no adapter");
                 continue;
             }
-            // slither-disable-next-line calls-loop
+            // Justification: tryGetValidatedPrice unused price/updatedAt return values are intentionally ignored.
+            // slither-disable-next-line calls-loop,unused-return
             (bool healthy,,) = oracleRegistry.tryGetValidatedPrice(token);
             if (!healthy) {
                 emit UnpriceableAssetSkipped(token, config.oracle);
@@ -429,6 +430,8 @@ contract GrowthStrategy is CoreStrategy, IInKindRedemptionStrategy {
     }
 
     /// @notice Prunes a zero-balance retained token from portfolio tracking.
+    // Justification: pruneRetainedToken swap-and-pops from array inside one-shot governance cleanup.
+    // slither-disable-next-line costly-loop
     function pruneRetainedToken(address token) external restricted {
         if (!isRetainedToken[token]) return;
         if (retainedBalance[token] != 0) revert RetainedAssetInvalid(token);
@@ -557,9 +560,9 @@ contract GrowthStrategy is CoreStrategy, IInKindRedemptionStrategy {
 
     function _oracleValue(address token, uint256 amount) private view returns (uint256 value) {
         // Justification: tryGetValidatedPrice handles stale or unconfigured feeds gracefully without reverting.
-        // slither-disable-next-line calls-loop
+        // slither-disable-next-line calls-loop,unused-return
         (bool healthyIn, uint256 priceIn,) = oracleRegistry.tryGetValidatedPrice(token);
-        // slither-disable-next-line calls-loop
+        // slither-disable-next-line calls-loop,unused-return
         (bool healthyOut, uint256 priceOut,) = oracleRegistry.tryGetValidatedPrice(asset());
         if (!healthyIn || !healthyOut || priceOut == 0) return 0;
 
@@ -570,26 +573,14 @@ contract GrowthStrategy is CoreStrategy, IInKindRedemptionStrategy {
         value = amount.mulDiv(priceIn, priceOut).mulDiv(10 ** decimalsOut, 10 ** decimalsIn);
     }
 
-    function _quoteValue(address token, uint256 amount) private view returns (uint256 value) {
-        // Justification: view queries to registry config are safe inside bounded loops of tracked tokens.
-        // slither-disable-next-line calls-loop
-        RewardTokenConfig memory config = rewardRegistry.getRewardTokenConfig(token);
-        if (config.adapter == address(0)) return 0;
-        // slither-disable-next-line calls-loop
-        if (!executionRouter.isRouteApproved(config.adapter, token, asset())) return 0;
-        // slither-disable-next-line calls-loop
-        uint256 amountOut = IDexAdapter(config.adapter).quoteExactInput(token, asset(), amount);
-        return amountOut;
-    }
-
     function _tokenAmountForAssetValue(address token, uint256 assetValue) private view returns (uint256 amount) {
         // Justification: assetValue == 0 check is an early return check.
         // slither-disable-next-line incorrect-equality
         if (assetValue == 0) return 0;
         // Justification: tryGetValidatedPrice handles stale or unconfigured feeds gracefully.
-        // slither-disable-next-line calls-loop
+        // slither-disable-next-line calls-loop,unused-return
         (bool healthyIn, uint256 priceIn,) = oracleRegistry.tryGetValidatedPrice(token);
-        // slither-disable-next-line calls-loop
+        // slither-disable-next-line calls-loop,unused-return
         (bool healthyOut, uint256 priceOut,) = oracleRegistry.tryGetValidatedPrice(asset());
         if (!healthyIn || !healthyOut || priceIn == 0) return 0;
 

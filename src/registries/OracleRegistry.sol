@@ -73,6 +73,7 @@ contract OracleRegistry is IOracleRegistry, AccessManaged, Events {
         OracleConfig memory config = _configs[asset];
         if (config.feed == address(0) || config.paused) return (false, 0, 0);
 
+        // slither-disable-next-line unused-return
         try IPriceFeed(config.feed).latestRoundData() returns (
             uint80 roundId, int256 answer, uint256, uint256 observedAt, uint80 answeredInRound
         ) {
@@ -91,6 +92,7 @@ contract OracleRegistry is IOracleRegistry, AccessManaged, Events {
     }
 
     function isHealthy(address asset) external view returns (bool healthy) {
+        // slither-disable-next-line unused-return
         (healthy,,) = this.tryGetValidatedPrice(asset);
     }
 
