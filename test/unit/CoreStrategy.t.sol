@@ -116,7 +116,7 @@ contract CoreStrategyTest is Test {
         vm.prank(user);
         vault.withdraw(250 ether, receiver, user, 1_000);
 
-        assertEq(index.balanceOf(receiver), 250 ether);
+        assertEq(index.balanceOf(receiver), 225 ether);
         assertEq(vault.strategyDebt(), 725 ether);
         assertEq(indexFinance.totalDeposited(address(strategy)), 725 ether);
     }

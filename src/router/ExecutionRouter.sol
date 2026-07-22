@@ -143,14 +143,13 @@ contract ExecutionRouter is IExecutionRouter, AccessManaged, ReentrancyGuard, Ev
     {
         if (maxDeviationBps == 0) return;
 
-        // Justification: the updatedAt timestamp returned by getValidatedPrice is checked inside
-        // oracleRegistry, so the router does not need to verify it again.
+        // Justification: tryGetValidatedPrice handles paused/stale feeds gracefully without reverting.
         // slither-disable-next-line unused-return
-        (uint256 priceIn,) = oracleRegistry.getValidatedPrice(request.tokenIn);
-        // Justification: the updatedAt timestamp returned by getValidatedPrice is checked inside
-        // oracleRegistry, so the router does not need to verify it again.
+        (bool healthyIn, uint256 priceIn,) = oracleRegistry.tryGetValidatedPrice(request.tokenIn);
         // slither-disable-next-line unused-return
-        (uint256 priceOut,) = oracleRegistry.getValidatedPrice(request.tokenOut);
+        (bool healthyOut, uint256 priceOut,) = oracleRegistry.tryGetValidatedPrice(request.tokenOut);
+        if (!healthyIn || !healthyOut || priceOut == 0) return;
+
         uint8 decimalsIn = IERC20Metadata(request.tokenIn).decimals();
         uint8 decimalsOut = IERC20Metadata(request.tokenOut).decimals();
 

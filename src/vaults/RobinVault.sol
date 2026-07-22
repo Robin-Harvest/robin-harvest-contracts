@@ -524,8 +524,8 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events, IRo
         uint16 maxLossBps
     ) private {
         if (maxLossBps > Constants.MAX_BPS) revert InvalidBasisPoints(maxLossBps);
-        _ensureLiquidity(assets, maxLossBps);
-        super._withdraw(caller, receiver, owner, assets, shares);
+        uint256 loss = _ensureLiquidity(assets, maxLossBps);
+        super._withdraw(caller, receiver, owner, assets - loss, shares);
         _enforcePostWithdrawEligibility();
         _updateEligibilityTracking();
     }
@@ -550,22 +550,23 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events, IRo
 
     // Justification: Tainted by strategyDebt. But it does not rely on or check time.
     // slither-disable-next-line timestamp
-    function _ensureLiquidity(uint256 assets, uint16 maxLossBps) private {
+    function _ensureLiquidity(uint256 assets, uint16 maxLossBps) private returns (uint256 loss) {
         IERC20 assetToken = IERC20(asset());
         uint256 idle = assetToken.balanceOf(address(this));
-        if (idle >= assets) return;
+        if (idle >= assets) return 0;
 
         IRobinStrategy currentStrategy = strategy;
         if (address(currentStrategy) == address(0)) revert InvalidAccounting();
 
         uint256 shortfall = assets - idle;
         uint256 balanceBefore = idle;
+        uint256 amountFreed;
         // Justification: CEI cannot be applied here because the state update (strategyDebt reduction) depends
         // on the `amountFreed` and `loss` returned by the external `freeFunds` call.
         // Reentrancy is prevented because all user-facing functions calling this internal method (withdraw, redeem)
         // are protected by the `nonReentrant` modifier.
-        // slither-disable-next-line reentrancy-no-eth,reentrancy-benign,reentrancy-balance
-        (uint256 amountFreed, uint256 loss) = currentStrategy.freeFunds(shortfall);
+        // slither-disable-next-line reentrancy-no-eth,reentrancy-benign,reentrancy-balance,reentrancy-events
+        (amountFreed, loss) = currentStrategy.freeFunds(shortfall);
 
         uint256 lossDenominator = amountFreed + loss;
         // Justification: lossDenominator == 0 check is necessary to prevent division by zero.
@@ -582,7 +583,7 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events, IRo
         strategyDebt = previousDebt - debtReduction;
         emit StrategyDebtUpdated(address(currentStrategy), previousDebt, strategyDebt);
 
-        if (balanceAfter < assets) revert InvalidAccounting();
+        if (balanceAfter + loss < assets) revert InvalidAccounting();
     }
 
     // Justification: Calls totalAssets() which is tainted by block.timestamp.

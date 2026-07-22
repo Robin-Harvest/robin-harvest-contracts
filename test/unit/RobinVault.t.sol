@@ -104,7 +104,7 @@ contract RobinVaultTest is Test {
         vm.prank(user);
         vault.withdraw(500 ether, receiver, user, 30);
 
-        assertEq(index.balanceOf(receiver), 500 ether);
+        assertEq(index.balanceOf(receiver), 499 ether);
         assertEq(vault.strategyDebt(), 499 ether);
     }
 
