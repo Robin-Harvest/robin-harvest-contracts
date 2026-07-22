@@ -119,6 +119,11 @@ Robin Harvest assumes:
 - standard ERC20 retained assets
 - non-malicious external protocols
 
+**Oracle Valuation & Liveness Policy**:
+- Protocol liveness is prioritized over temporary NAV precision during price feed disruptions.
+- If an oracle feed for a retained token is stale, paused, or invalid, the token's value is safely treated as `0` during NAV calculation rather than reverting vault operations.
+- Operators receive `UnpriceableAssetSkipped` event alerts during liquidation routines and must treat unpriced feeds as operational alerts requiring oracle remediation.
+
 **Explicitly Unsupported:**
 - fee-on-transfer tokens
 - rebasing tokens

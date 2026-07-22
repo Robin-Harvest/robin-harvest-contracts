@@ -185,3 +185,17 @@ This ensures that management fees are only realizable from actual locked profit,
 ### Net Assets vs. INDEX Holdings
 The vault evaluates deposit/withdraw eligibility against a configurable `eligibilityThreshold`. This threshold is measured against the vault's **net assets** (i.e. `totalAssets()`, which includes strategy-deployed capital and accrued strategy value), *not* its raw un-deployed INDEX token holdings. 
 This is an intentional design choice to reflect the true economic size of the vault rather than just its idle liquidity, ensuring eligibility policies accurately capture the protocol's total managed value.
+
+---
+
+## Oracle Valuation Policy (Liveness vs. NAV Understatement)
+
+The protocol explicitly prioritizes **protocol liveness and operational availability** over temporary precision during oracle feed disruptions.
+
+If an oracle feed for a retained reward token becomes stale, paused, non-positive, or unconfigured:
+- `OracleRegistry.tryGetValidatedPrice(asset)` returns `(false, 0, 0)`.
+- `GrowthStrategy._valueToken()` safely returns `0` value for that token during NAV calculation (`totalAssets()`), rather than reverting.
+- State-changing routines (`_freeFunds()`) emit `UnpriceableAssetSkipped(token, oracle)` to alert operators.
+
+> **Operational Specification**: Governance intentionally accepts temporary NAV understatement for an unpriced retained token in exchange for keeping `withdraw()`, `deposit()`, `harvest()`, `redeemInKind()`, and `emergencyWithdraw()` 100% operational. Operators MUST treat `UnpriceableAssetSkipped` as an operational alert requiring oracle feed remediation, not as a standard long-term operating state.
+

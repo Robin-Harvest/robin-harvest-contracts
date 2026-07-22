@@ -150,6 +150,8 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events, IRo
         return previewDeposit(maxDeposit(receiver));
     }
 
+    /// @notice Returns maximum redeemable shares for owner, bounded by available liquidity.
+    /// @dev Clamps against available liquidity (idle vault balance + strategy total assets) as a gas-efficient upper bound.
     // Justification: maxRedeem checks totalAssets() and strategy liquidity.
     // slither-disable-next-line timestamp
     function maxRedeem(address owner) public view override returns (uint256) {
@@ -171,6 +173,8 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events, IRo
         return ownerShares;
     }
 
+    /// @notice Returns maximum withdrawable assets for owner, bounded by available liquidity.
+    /// @dev Clamps against available liquidity (idle vault balance + strategy total assets) as a gas-efficient upper bound.
     // Justification: maxWithdraw checks totalAssets() and strategy liquidity.
     // slither-disable-next-line timestamp
     function maxWithdraw(address owner) public view override returns (uint256) {
