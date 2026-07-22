@@ -1087,15 +1087,15 @@ contract GrowthStrategyTest is Test {
         vault.redeemInKind(shares, user, user);
     }
 
-    function testPausedOracleFreezesWithdrawal() external {
+    function testUnhealthyOracleDoesNotDoSOperations() external {
         _depositAndDeploy(1_000 ether);
 
         // Add a mock retained token that is enabled
         MockStockToken extraStock = new MockStockToken("Extra Stock", "mEXT", 18);
         MockOracle extraFeed = new MockOracle(8, 1e8);
 
-        // Retain 100% of both reward tokens
         vm.startPrank(governance);
+        oracleRegistry.setOracleConfig(address(extraStock), _oracleConfig(address(extraFeed), false));
         rewardRegistry.setRewardTokenConfig(
             address(extraStock),
             RewardTokenConfig({
@@ -1119,16 +1119,62 @@ contract GrowthStrategyTest is Test {
         vm.prank(governance);
         strategy.harvest();
 
-        // Vault is at 1000 shares.
-        uint256 shares = vault.balanceOf(user);
+        uint256 navBeforePause = vault.totalAssets();
 
-        // Pause oracle for retainStock. This should freeze the vault because totalAssets() cannot be calculated.
+        // Pause oracle for retainStock (unhealthy feed)
         vm.prank(governance);
         oracleRegistry.setOracleConfig(address(retainStock), _oracleConfig(address(retainFeed), true));
 
-        // Attempting a withdrawal should now revert with Disabled because the paused oracle prevents NAV calculation.
+        // Test 1: Operations continue to work without revert!
         vm.prank(user);
-        vm.expectRevert(abi.encodeWithSelector(Disabled.selector, address(retainFeed)));
-        vault.withdraw(100 ether, user, user, 100);
+        vault.deposit(10 ether, user);
+
+        vm.prank(user);
+        vault.withdraw(10 ether, user, user);
+
+        vm.prank(user);
+        vault.redeem(10 ether, user, user);
+
+        vm.prank(user);
+        vault.redeemInKind(10 ether, user, user);
+
+        vm.prank(governance);
+        strategy.harvest();
+
+        // Test 2: Oracle recovered -> NAV monotonically recovers
+        vm.prank(governance);
+        oracleRegistry.setOracleConfig(address(retainStock), _oracleConfig(address(retainFeed), false));
+
+        uint256 navAfterUnpause = vault.totalAssets();
+        assertGe(navAfterUnpause, navBeforePause - 100 ether);
+    }
+
+    function testPruneRetainedToken() external {
+        _depositAndDeploy(1_000 ether);
+        _accrueReward(retainStock, 100 ether);
+
+        vm.prank(governance);
+        strategy.harvest();
+
+        assertTrue(strategy.isRetainedToken(address(retainStock)));
+        assertEq(strategy.retainedBalance(address(retainStock)), 100 ether);
+
+        // Cannot prune non-zero balance
+        vm.prank(governance);
+        vm.expectRevert(abi.encodeWithSelector(GrowthStrategy.RetainedAssetInvalid.selector, address(retainStock)));
+        strategy.pruneRetainedToken(address(retainStock));
+
+        // Fully redeem in kind to zero balance
+        uint256 shares = vault.balanceOf(user);
+        vm.prank(user);
+        vault.redeemInKind(shares, user, user);
+
+        assertEq(strategy.retainedBalance(address(retainStock)), 0);
+
+        // Prune zero-balance retained token
+        vm.prank(governance);
+        strategy.pruneRetainedToken(address(retainStock));
+
+        assertFalse(strategy.isRetainedToken(address(retainStock)));
     }
 }

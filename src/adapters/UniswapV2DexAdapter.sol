@@ -6,7 +6,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {AccessManaged} from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
 import {IDexAdapter} from "../interfaces/IDexAdapter.sol";
 import {IUniswapV2Router} from "../interfaces/external/IUniswapV2Router.sol";
-import {ZeroAddress, ZeroAmount} from "../libraries/Errors.sol";
+import {ZeroAddress, ZeroAmount, Unauthorized} from "../libraries/Errors.sol";
 
 /// @title Uniswap V2 Style DEX Adapter
 /// @notice Exact-input adapter for a constant-product router.
@@ -24,11 +24,15 @@ contract UniswapV2DexAdapter is IDexAdapter, AccessManaged {
     /// @notice Approved router used for swaps and quotes.
     IUniswapV2Router public immutable router;
 
+    /// @notice Execution router authorized to execute swaps via this adapter (optional, if zero any caller is permitted).
+    address public immutable executionRouter;
+
     mapping(address tokenIn => mapping(address tokenOut => address[])) private _customPaths;
 
-    constructor(IUniswapV2Router router_, address authority_) AccessManaged(authority_) {
+    constructor(IUniswapV2Router router_, address executionRouter_, address authority_) AccessManaged(authority_) {
         if (address(router_) == address(0) || authority_ == address(0)) revert ZeroAddress();
         router = router_;
+        executionRouter = executionRouter_;
     }
 
     /// @notice Configures a custom multi-hop path.
@@ -52,6 +56,7 @@ contract UniswapV2DexAdapter is IDexAdapter, AccessManaged {
         address recipient,
         uint48 deadline
     ) external override returns (uint256 amountOut) {
+        if (executionRouter != address(0) && msg.sender != executionRouter) revert Unauthorized(msg.sender, bytes32(0));
         if (amountIn == 0) revert ZeroAmount();
         if (recipient == address(0)) revert ZeroAddress();
         if (block.timestamp > deadline) revert DeadlineExpired();

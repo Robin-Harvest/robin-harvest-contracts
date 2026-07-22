@@ -127,6 +127,7 @@ contract ExecutionRouter is IExecutionRouter, AccessManaged, ReentrancyGuard, Ev
     {
         if (adapter == address(0) || tokenIn == address(0) || tokenOut == address(0)) revert ZeroAddress();
         if (maxOracleDeviationBps > Constants.MAX_BPS) revert InvalidBasisPoints(maxOracleDeviationBps);
+        if (enabled && maxOracleDeviationBps == 0) revert InvalidBasisPoints(0);
         bytes32 routeId = getRouteId(adapter, tokenIn, tokenOut);
         _routes[routeId] = RouteConfig({enabled: enabled, maxOracleDeviationBps: maxOracleDeviationBps});
         emit RouteConfigured(routeId, adapter, tokenIn, tokenOut, enabled, maxOracleDeviationBps);

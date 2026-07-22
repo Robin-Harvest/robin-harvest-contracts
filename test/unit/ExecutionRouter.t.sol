@@ -90,6 +90,12 @@ contract ExecutionRouterTest is Test {
         router.swapExactInput(_request(100 ether, 1 ether, uint48(block.timestamp + 1)), recipient);
     }
 
+    function testZeroOracleDeviationRevertsWhenEnabled() public {
+        vm.prank(governance);
+        vm.expectRevert();
+        router.setRoute(address(dex), address(stock), address(index), true, 0);
+    }
+
     function _request(uint256 amountIn, uint256 minAmountOut, uint48 deadline)
         private
         view

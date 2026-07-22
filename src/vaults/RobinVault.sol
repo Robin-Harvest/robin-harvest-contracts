@@ -14,7 +14,8 @@ import {
     InvalidBasisPoints,
     InvalidLifecycleState,
     LossExceedsMaximum,
-    ZeroAddress
+    ZeroAddress,
+    ZeroAmount
 } from "../libraries/Errors.sol";
 import {IRobinStrategy} from "../interfaces/IRobinStrategy.sol";
 import {IRobinAccountant} from "../interfaces/IRobinAccountant.sol";
@@ -147,6 +148,45 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events, IRo
 
     function maxMint(address receiver) public view override returns (uint256) {
         return previewDeposit(maxDeposit(receiver));
+    }
+
+    // Justification: maxRedeem checks totalAssets() and strategy liquidity.
+    // slither-disable-next-line timestamp
+    function maxRedeem(address owner) public view override returns (uint256) {
+        if (lifecycleState == LifecycleState.Shutdown) return 0;
+        uint256 ownerShares = balanceOf(owner);
+        if (ownerShares == 0) return 0;
+
+        uint256 assets = previewRedeem(ownerShares);
+        if (assets == 0) return 0;
+
+        uint256 availableAssets = IERC20(asset()).balanceOf(address(this));
+        if (address(strategy) != address(0)) {
+            availableAssets += strategy.totalAssets();
+        }
+
+        if (assets > availableAssets) {
+            return previewWithdraw(availableAssets);
+        }
+        return ownerShares;
+    }
+
+    // Justification: maxWithdraw checks totalAssets() and strategy liquidity.
+    // slither-disable-next-line timestamp
+    function maxWithdraw(address owner) public view override returns (uint256) {
+        if (lifecycleState == LifecycleState.Shutdown) return 0;
+        uint256 ownerShares = balanceOf(owner);
+        if (ownerShares == 0) return 0;
+
+        uint256 assets = previewRedeem(ownerShares);
+        if (assets == 0) return 0;
+
+        uint256 availableAssets = IERC20(asset()).balanceOf(address(this));
+        if (address(strategy) != address(0)) {
+            availableAssets += strategy.totalAssets();
+        }
+
+        return assets > availableAssets ? availableAssets : assets;
     }
 
     function deposit(uint256 assets, address receiver) public override nonReentrant returns (uint256 shares) {
@@ -373,6 +413,7 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events, IRo
     }
 
     function setProfitMaxUnlockTime(uint256 newDuration) external restricted {
+        if (newDuration == 0) revert ZeroAmount();
         _syncLockedProfit();
         emit ProfitUnlockUpdated(profitMaxUnlockTime, newDuration);
         profitMaxUnlockTime = newDuration;
@@ -641,7 +682,7 @@ contract RobinVault is ERC4626Paris, AccessManaged, ReentrancyGuard, Events, IRo
         address recipient = currentAccountant.feeRecipient();
         if (recipient == address(0)) revert ZeroAddress();
 
-        _ensureLiquidity(totalFee, Constants.MAX_BPS);
+        _ensureLiquidity(totalFee, defaultMaxLossBps);
         IERC20(asset()).safeTransfer(recipient, totalFee);
         emit ProtocolFeesCollected(recipient, performanceFee, managementFee);
     }

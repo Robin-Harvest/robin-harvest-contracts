@@ -16,6 +16,20 @@ interface IOracleRegistry {
     /// @return updatedAt Timestamp of the accepted underlying observation.
     function getValidatedPrice(address asset) external view returns (uint256 price, uint256 updatedAt);
 
+    /// @notice Returns a validated normalized price without reverting on stale or invalid feeds.
+    /// @param asset Asset whose price is requested.
+    /// @return healthy True if the oracle feed is active, non-stale, and valid.
+    /// @return price Price normalized to 1e18 precision (0 if unhealthy).
+    /// @return updatedAt Timestamp of observation (0 if unhealthy).
+    function tryGetValidatedPrice(address asset)
+        external
+        view
+        returns (bool healthy, uint256 price, uint256 updatedAt);
+
+    /// @notice Returns whether an asset's oracle feed is healthy, active, and fresh.
+    /// @param asset Asset to check.
+    function isHealthy(address asset) external view returns (bool healthy);
+
     /// @notice Creates or replaces an asset's oracle policy.
     /// @param asset Asset whose policy is updated.
     /// @param config Validated oracle policy to persist.

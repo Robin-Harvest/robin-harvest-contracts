@@ -66,4 +66,13 @@ abstract contract Events {
     event SwapExecuted(
         address indexed adapter, address indexed tokenIn, address indexed tokenOut, uint256 amountIn, uint256 amountOut
     );
+
+    /// @notice Emitted when an unhealthy or stale oracle asset is skipped during state-changing operations.
+    /// @param token Token whose price feed was unhealthy.
+    /// @param oracle Feed address or oracle identifier.
+    event UnpriceableAssetSkipped(address indexed token, address indexed oracle);
+
+    /// @notice Emitted when a zero-balance retained token is pruned from the strategy portfolio.
+    /// @param token Retained token pruned.
+    event RetainedTokenPruned(address indexed token);
 }

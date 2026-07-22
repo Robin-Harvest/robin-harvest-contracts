@@ -400,9 +400,10 @@ contract GrowthStrategy is CoreStrategy, IInKindRedemptionStrategy {
                 continue;
             }
             // slither-disable-next-line calls-loop
-            OracleConfig memory oracleConfig = oracleRegistry.getOracleConfig(token);
-            if (oracleConfig.feed == address(0) || oracleConfig.paused) {
-                emit RetainedTokenSkipped(token, "Oracle disabled or paused");
+            (bool healthy,,) = oracleRegistry.tryGetValidatedPrice(token);
+            if (!healthy) {
+                emit UnpriceableAssetSkipped(token, config.oracle);
+                emit RetainedTokenSkipped(token, "Oracle unhealthy or stale");
                 continue;
             }
 
@@ -427,6 +428,35 @@ contract GrowthStrategy is CoreStrategy, IInKindRedemptionStrategy {
         if (balanceAfter < balanceBefore) revert RetainedAssetInvalid(address(0));
     }
 
+    /// @notice Prunes a zero-balance retained token from portfolio tracking.
+    function pruneRetainedToken(address token) external restricted {
+        if (!isRetainedToken[token]) return;
+        if (retainedBalance[token] != 0) revert RetainedAssetInvalid(token);
+
+        isRetainedToken[token] = false;
+        _setTokenExposure(token, 0);
+
+        uint256 len = _retainedTokens.length;
+        for (uint256 i; i < len; ++i) {
+            if (_retainedTokens[i] == token) {
+                _retainedTokens[i] = _retainedTokens[len - 1];
+                _retainedTokens.pop();
+                break;
+            }
+        }
+
+        uint256 orderLen = _liquidationOrder.length;
+        for (uint256 i; i < orderLen; ++i) {
+            if (_liquidationOrder[i] == token) {
+                _liquidationOrder[i] = _liquidationOrder[orderLen - 1];
+                _liquidationOrder.pop();
+                break;
+            }
+        }
+
+        emit RetainedTokenPruned(token);
+    }
+
     function _rewardAssets() internal view override returns (uint256 value) {
         value = _portfolioValue();
     }
@@ -434,7 +464,7 @@ contract GrowthStrategy is CoreStrategy, IInKindRedemptionStrategy {
     /// @dev Computes the deterministic retain percentage for a reward category.
     function _computeRetainBps(RewardCategory category) private view returns (uint16 retainBps) {
         CategoryPolicy memory policy = categoryPolicies[category];
-        if (policy.maxRetainBps == 0) return Constants.MAX_BPS;
+        if (policy.maxRetainBps == 0) return 0;
 
         (, uint256 currentCategoryBps) = categoryExposure(category);
         if (currentCategoryBps < policy.targetRetainBps) return policy.maxRetainBps;
@@ -522,18 +552,17 @@ contract GrowthStrategy is CoreStrategy, IInKindRedemptionStrategy {
         if (amount == 0) return 0;
 
         value = _oracleValue(token, amount);
-        uint256 quoteValue = _quoteValue(token, amount);
-        if (quoteValue != 0 && quoteValue < value) value = quoteValue;
         if (navHaircutBps != 0) value = value.mulDiv(Constants.BPS - navHaircutBps, Constants.BPS);
     }
 
     function _oracleValue(address token, uint256 amount) private view returns (uint256 value) {
-        // Justification: updatedAt is validated inside the OracleRegistry; the strategy does not re-check it.
-        // slither-disable-next-line unused-return,calls-loop
-        (uint256 priceIn,) = oracleRegistry.getValidatedPrice(token);
-        // Justification: updatedAt is validated inside the OracleRegistry; the strategy does not re-check it.
-        // slither-disable-next-line unused-return,calls-loop
-        (uint256 priceOut,) = oracleRegistry.getValidatedPrice(asset());
+        // Justification: tryGetValidatedPrice handles stale or unconfigured feeds gracefully without reverting.
+        // slither-disable-next-line calls-loop
+        (bool healthyIn, uint256 priceIn,) = oracleRegistry.tryGetValidatedPrice(token);
+        // slither-disable-next-line calls-loop
+        (bool healthyOut, uint256 priceOut,) = oracleRegistry.tryGetValidatedPrice(asset());
+        if (!healthyIn || !healthyOut || priceOut == 0) return 0;
+
         // slither-disable-next-line calls-loop
         uint8 decimalsIn = IERC20Metadata(token).decimals();
         // slither-disable-next-line calls-loop
@@ -557,12 +586,13 @@ contract GrowthStrategy is CoreStrategy, IInKindRedemptionStrategy {
         // Justification: assetValue == 0 check is an early return check.
         // slither-disable-next-line incorrect-equality
         if (assetValue == 0) return 0;
-        // Justification: updatedAt is validated inside the OracleRegistry; the strategy does not re-check it.
-        // slither-disable-next-line unused-return,calls-loop
-        (uint256 priceIn,) = oracleRegistry.getValidatedPrice(token);
-        // Justification: updatedAt is validated inside the OracleRegistry; the strategy does not re-check it.
-        // slither-disable-next-line unused-return,calls-loop
-        (uint256 priceOut,) = oracleRegistry.getValidatedPrice(asset());
+        // Justification: tryGetValidatedPrice handles stale or unconfigured feeds gracefully.
+        // slither-disable-next-line calls-loop
+        (bool healthyIn, uint256 priceIn,) = oracleRegistry.tryGetValidatedPrice(token);
+        // slither-disable-next-line calls-loop
+        (bool healthyOut, uint256 priceOut,) = oracleRegistry.tryGetValidatedPrice(asset());
+        if (!healthyIn || !healthyOut || priceIn == 0) return 0;
+
         // slither-disable-next-line calls-loop
         uint8 decimalsIn = IERC20Metadata(token).decimals();
         // slither-disable-next-line calls-loop

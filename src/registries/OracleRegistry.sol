@@ -62,6 +62,38 @@ contract OracleRegistry is IOracleRegistry, AccessManaged, Events {
         price = _normalize(uint256(answer), config.decimals).mulDiv(_multiplier(config.uiMultiplier), 1e18);
     }
 
+    // Justification: The oracle freshness check validates observedAt against block.timestamp to detect stale feeds.
+    // Miner manipulation on block.timestamp is negligible relative to the heartbeat window (usually hours).
+    // slither-disable-next-line timestamp
+    function tryGetValidatedPrice(address asset)
+        external
+        view
+        returns (bool healthy, uint256 price, uint256 updatedAt)
+    {
+        OracleConfig memory config = _configs[asset];
+        if (config.feed == address(0) || config.paused) return (false, 0, 0);
+
+        try IPriceFeed(config.feed).latestRoundData() returns (
+            uint80 roundId, int256 answer, uint256, uint256 observedAt, uint80 answeredInRound
+        ) {
+            if (answer <= 0 || observedAt == 0) return (false, 0, 0);
+            if (answeredInRound < roundId) return (false, 0, 0);
+            if (config.heartbeat != 0 && block.timestamp > observedAt + config.heartbeat) {
+                return (false, 0, 0);
+            }
+
+            updatedAt = observedAt;
+            price = _normalize(uint256(answer), config.decimals).mulDiv(_multiplier(config.uiMultiplier), 1e18);
+            return (true, price, updatedAt);
+        } catch {
+            return (false, 0, 0);
+        }
+    }
+
+    function isHealthy(address asset) external view returns (bool healthy) {
+        (healthy,,) = this.tryGetValidatedPrice(asset);
+    }
+
     function setOracleConfig(address asset, OracleConfig calldata config) external restricted {
         _validateAssetAndConfig(asset, config);
         _configs[asset] = config;

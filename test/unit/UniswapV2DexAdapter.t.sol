@@ -88,7 +88,7 @@ contract UniswapV2DexAdapterTest is Test {
     function setUp() public {
         manager = new AccessManager(governance);
         router = new MockRouter();
-        adapter = new UniswapV2DexAdapter(router, address(manager));
+        adapter = new UniswapV2DexAdapter(router, address(0), address(manager));
 
         tokenA = new MockStockToken("Token A", "tA", 18);
         tokenB = new MockStockToken("Token B", "tB", 18);

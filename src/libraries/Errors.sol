@@ -73,11 +73,6 @@ error ExposureLimitExceeded(bytes32 subject, uint256 exposureBps, uint256 maxExp
 /// @notice Thrown when reported accounting values are inconsistent.
 error InvalidAccounting();
 
-/// @notice Thrown when the configured INDEX eligibility threshold is not met.
-/// @param balance Current eligible INDEX balance.
-/// @param threshold Required INDEX balance.
-error EligibilityThresholdNotMet(uint256 balance, uint256 threshold);
-
 /// @notice Thrown when a cooldown has not elapsed.
 /// @param availableAt Earliest permitted execution timestamp.
 error CooldownActive(uint256 availableAt);
