@@ -266,3 +266,92 @@ Cannot migrate while debt non-zero (`StrategyAlreadySet` / debt checks).
 ---
 
 **Next:** [09-mathematics.md](./09-mathematics.md)
+
+---
+
+## 8.13 LP Deploy (LpStrategy)
+
+**Entry:** `LpStrategy._deployFunds(amount)` — called by vault via `deployFunds`
+
+```mermaid
+sequenceDiagram
+    participant Vault
+    participant LS as LpStrategy
+    participant Router as ExecutionRouter
+    participant Pair as DEX LP Pair
+    participant Gauge
+
+    Vault->>LS: deployFunds(amount)
+    LS->>LS: _optimalSwapAmount(amount, reserveIndex)
+    LS->>Router: swapExactInput(INDEX → pairedToken, swapAmt)
+    Router-->>LS: pairedOut
+    LS->>Pair: addLiquidity(INDEX, pairedToken, remainingINDEX, pairedOut)
+    Pair-->>LS: lpTokens
+    LS->>Gauge: deposit(lpTokens)
+```
+
+**State:** vault idle ↓; strategyDebt ↑; LP tokens staked in Gauge ↑
+
+**Key:** `_optimalSwapAmount` ensures no leftover tokens by solving the constant-product formula.
+
+---
+
+## 8.14 LP Withdraw (LpStrategy)
+
+**Entry:** `LpStrategy._freeFunds(amount)` — called during vault `withdraw`/`redeem`
+
+```mermaid
+sequenceDiagram
+    participant Vault
+    participant LS as LpStrategy
+    participant Gauge
+    participant Pair as DEX LP Pair
+    participant Router as ExecutionRouter
+
+    Vault->>LS: freeFunds(shortfall)
+    LS->>LS: compute lpToBurn from shortfall / unitLpValue
+    LS->>Gauge: withdraw(lpToBurn)
+    LS->>Pair: removeLiquidity(lpToBurn)
+    Pair-->>LS: indexOut + pairedOut
+    LS->>Router: swapExactInput(pairedToken → INDEX, pairedOut)
+    Router-->>LS: additionalINDEX
+    LS->>Vault: transfer(totalINDEX)
+    LS-->>Vault: (amountFreed, loss)
+```
+
+**Loss:** If `amountFreed < shortfall`, the delta is reported as loss, bounded by `maxLossBps`.
+
+---
+
+## 8.15 LP Harvest (LpStrategy)
+
+**Entry:** `LpStrategy.harvest()` — keeper, restricted
+
+```mermaid
+sequenceDiagram
+    participant Keeper
+    participant LS as LpStrategy
+    participant Gauge
+    participant Router as ExecutionRouter
+    participant Pair as DEX LP Pair
+    participant Vault
+
+    Keeper->>LS: harvest()
+    LS->>Gauge: getReward()
+    loop reward tokens
+        LS->>Router: swapExactInput(reward → INDEX)
+    end
+    alt compounding enabled
+        LS->>LS: _optimalSwapAmount(indexGained, reserveIndex)
+        LS->>Router: swapExactInput(INDEX → pairedToken)
+        LS->>Pair: addLiquidity(INDEX, pairedToken)
+        Pair-->>LS: newLpTokens
+        LS->>Gauge: deposit(newLpTokens)
+    end
+    LS->>LS: compute gain/loss vs lastReportedAssets
+    LS->>Vault: report(HarvestReport)
+```
+
+**State:** Reward tokens sold → INDEX → re-pooled → re-staked. Share price increases via `lockedProfit`.
+
+

@@ -16,18 +16,19 @@ The repository is named `robin-harvest-contracts`. Current version: **v0.1.0-alp
 
 
 
-## 1.2 The Two Products
+## 1.2 The Three Products
 
-Robin Harvest ships two vault/strategy pairs from a single deployment script:
+Robin Harvest ships three vault/strategy pairs from a single deployment script:
 
 
 | Product    | Vault symbol | Strategy         | Reward policy                                                                             |
 | ---------- | ------------ | ---------------- | ----------------------------------------------------------------------------------------- |
 | **Core**   | `rhINDEX-C`  | `CoreStrategy`   | Sell all rewards to INDEX; never retain stocks                                            |
 | **Growth** | `rhINDEX-G`  | `GrowthStrategy` | Sell, ignore, or **retain** rewards per `RewardRegistry`; optional **in-kind redemption** |
+| **LP**     | `rhINDEX-LP` | `LpStrategy`     | Optimal-ratio swap into DEX LP pool; Gauge staking; auto-compound all rewards into LP     |
 
 
-Both vaults share:
+All three vaults share:
 
 - `OracleRegistry` — validated price feeds
 - `RewardRegistry` — per-token reward policy
@@ -106,11 +107,12 @@ From `README.md` and `OPEN_QUESTIONS.md`:
 **Complete:**
 
 - ERC-4626 vault with debt accounting, locked profit, max-loss withdrawals
-- Core and Growth strategies
+- Core, Growth, and LP strategies
+- LP: optimal single-sided swap, DEX liquidity provisioning, Gauge staking, auto-compounding
 - Oracle, reward, and execution infrastructure
 - In-kind redemption (Growth)
 - Deployment/configure/validate scripts
-- Unit, integration, invariant, fuzz tests
+- Unit, integration, invariant (Core/Growth + LP), fuzz tests
 - CI: build sizes, tests, Slither
 
 **Pending before production:**

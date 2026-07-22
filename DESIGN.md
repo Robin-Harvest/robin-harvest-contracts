@@ -199,3 +199,30 @@ If an oracle feed for a retained reward token becomes stale, paused, non-positiv
 
 > **Operational Specification**: Governance intentionally accepts temporary NAV understatement for an unpriced retained token in exchange for keeping `withdraw()`, `deposit()`, `harvest()`, `redeemInKind()`, and `emergencyWithdraw()` 100% operational. Operators MUST treat `UnpriceableAssetSkipped` as an operational alert requiring oracle feed remediation, not as a standard long-term operating state.
 
+---
+
+## rhINDEX-LP Strategy Architecture & Accounting
+
+### Overview
+`LpStrategy` is an ERC-4626 vault strategy that automates DEX Liquidity Provisioning (LP), Gauge staking, and yield auto-compounding. It routes incoming `INDEX` deposits from `RobinVault`, swaps a calculated optimal portion into a paired stock token via `ExecutionRouter`, deposits both tokens into a Uniswap V2-style DEX pair pool, and stakes the resulting LP tokens into a yield Gauge.
+
+### Optimal Single-Sided Swap Calculation
+When deploying `INDEX` into a 50/50 pool with reserves $(R_{\text{index}}, R_{\text{paired}})$, swapping a naive 50% leads to imbalance and unused refund tokens. `LpStrategy` uses constant-product invariant math to calculate the exact optimal amount of `INDEX` to swap before adding liquidity:
+
+$$s = \frac{\sqrt{1997^2 \cdot R_{\text{index}}^2 + 3996000 \cdot R_{\text{index}} \cdot A} - 1997 \cdot R_{\text{index}}}{1998}$$
+
+*(assuming standard 0.30% DEX fee, i.e., $997/1000$ multiplier)*.
+
+### Mark-to-Market LP Token Valuation
+The strategy computes fair value of its LP holdings in `INDEX` terms without relying on spot LP token prices. It evaluates the pool's total underlying reserves via `OracleRegistry`:
+
+$$\text{TotalPoolValue}_{\text{INDEX}} = R_{\text{index}} + R_{\text{paired}} \cdot \text{Price}_{\text{paired/INDEX}}$$
+$$\text{UnitLpValue} = \frac{\text{TotalPoolValue}_{\text{INDEX}} \cdot 10^{18}}{\text{TotalSupply}_{\text{LP}}}$$
+$$\text{DeployedAssets} = \frac{\text{StakedLpBalance} \cdot \text{TotalPoolValue}_{\text{INDEX}}}{\text{TotalSupply}_{\text{LP}}}$$
+
+### Impermanent Loss (IL) Accounting Policy
+- **Fair Value Reporting**: `deployedAssets()` reports the current mark-to-market fair value of the LP tokens, reflecting real-time pool reserves and oracle valuations.
+- **Natural Share Price Adjustments**: Impermanent loss directly adjusts `totalAssets()`. As pool price divergence occurs, share price (`totalAssets / totalSupply`) naturally reflects the true withdrawable NAV.
+- **Predictable Loss Limits**: Vault withdrawals unpool LP tokens proportionally and convert the paired token back into `INDEX`. Maximum allowed slippage and IL during withdrawals is strictly enforced by `maxLossBps`.
+
+

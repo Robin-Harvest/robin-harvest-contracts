@@ -42,6 +42,7 @@ robin-harvest-contracts/
 | `StrategyBase.sol` | Abstract strategy framework |
 | `CoreStrategy.sol` | Index Finance + sell rewards |
 | `GrowthStrategy.sol` | Retention, exposure, in-kind, liquidation |
+| `LpStrategy.sol` | DEX liquidity provisioning, Gauge staking, optimal swap, auto-compounding |
 
 ### `src/registries/`
 

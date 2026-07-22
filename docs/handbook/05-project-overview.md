@@ -49,7 +49,19 @@ Robin Harvest pools capital, executes a **governance-defined policy** on-chain, 
 | Redemption | ERC-4626 INDEX **or** `redeemInKind` (INDEX + retained stocks) |
 | Withdrawals | Liquidates retained assets in **`liquidationOrder`** if needed |
 
-Both share registries, router, and access manager from one deployment.
+### LP (`rhINDEX-LP`)
+
+| Aspect | Detail |
+|---|---|
+| Vault | `RobinVault` — "Robin INDEX LP Vault" |
+| Strategy | `LpStrategy` |
+| Rewards | Auto-compounds arbitrary reward tokens via `ExecutionRouter` into pool liquidity |
+| Liquidity | Single-sided INDEX deposit automatically split via constant-product math into optimal paired stock ratio |
+| Staking | Automated Gauge staking (`IGaugeMock`) |
+| Valuation | Mark-to-market total pool value via `OracleRegistry` and reserve pricing |
+| Redemption | Standard ERC-4626 INDEX only (unpools LP tokens and converts paired token to INDEX) |
+
+All three product lines share registries, router, and access manager from one deployment.
 
 ---
 
