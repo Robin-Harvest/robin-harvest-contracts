@@ -110,7 +110,16 @@ abstract contract StrategyBase is IRobinStrategy, AccessManaged, ReentrancyGuard
         if (assetsNow >= previous) {
             report_.gain = assetsNow - previous;
         } else {
-            report_.loss = previous - assetsNow;
+            uint256 unroundedLoss = previous - assetsNow;
+            // Get strategy debt from vault to avoid reporting excess loss
+            // slither-disable-next-line low-level-calls
+            (bool success, bytes memory data) = vault.staticcall(abi.encodeWithSignature("strategyDebt()"));
+            if (success && data.length == 32) {
+                uint256 vaultDebt = abi.decode(data, (uint256));
+                report_.loss = unroundedLoss > vaultDebt ? vaultDebt : unroundedLoss;
+            } else {
+                report_.loss = unroundedLoss;
+            }
         }
 
         uint256 debtPayment = _asset.balanceOf(address(this));
