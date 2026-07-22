@@ -54,21 +54,24 @@ slither .
 | 10–11 | StrategyBase, CoreStrategy (provisional Index Finance ABI) | Complete |
 | 12–13 | GrowthStrategy (retention, liquidation order, conservative NAV, category policy) | Complete |
 | 14 | Optional In-Kind Redemption UX, integration, and system tests | Complete |
-| 15 | Deployment scripts and operational docs | Implementation complete. Production deployment remains blocked on final external protocol parameters (official Index Finance contracts, production oracle feeds, DEX routes, governance configuration, and external audit). |
+| 15 | Deployment scripts and operational docs | Complete |
+| 16 | rhINDEX-LP Strategy (DEX liquidity provision, Gauge staking, optimal deposit swap math, LP valuation, stateful LP invariant suite) | Complete |
 
 ## Features
 
 - ERC-4626 compliant vault architecture
-- Core and Growth yield strategies
-- Oracle-backed reward valuation
-- Constrained execution router
+- **Three Vault Strategy Products**: Core (Lending Yield), Growth (Stock Token Retention), and LP (DEX Liquidity Provision & Auto-compounding)
+- Automated optimal ratio swap calculation for single-sided INDEX deposits into DEX LP pools
+- Automated gauge staking and arbitrary reward token harvest & auto-compounding
+- Oracle-backed reward valuation & liveness-first accounting policy
+- Constrained execution router with max deviation protection
 - Configurable reward registry
 - Conservative NAV accounting
 - Category exposure enforcement
-- Optional in-kind redemption
+- Optional in-kind redemption for Growth vaults
 - Performance + management fee accounting
 - Timelocked strategy migration
-- Profit smoothing
+- Linear profit unlocking / lockup smoothing
 - AccessManager-based governance
 
 ## Supported Standards

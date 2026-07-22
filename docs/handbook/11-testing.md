@@ -42,6 +42,10 @@ Deploy/free funds, harvest sell, min output decimals, ignore/disposition, retain
 
 Extensive suite: retention, exposure limits, in-kind (partial/full/sequential), liquidation order, sandwich, fee-on-transfer rejection, NAV conservation, category retain bands, oracle pause on withdraw.
 
+### LpStrategy.t.sol
+
+Pool liquidity deployment, proportional LP token burning on freeFunds, governance controls (gauge, max slippage, pause compounding), auto-compounding of arbitrary reward tokens, and unhealthy oracle handling.
+
 ### Registry/Router/Accountant/Access/Adapter
 
 Each file tests governance validation, revert paths, and happy paths documented in function review.
@@ -65,8 +69,7 @@ These combine deposit → deploy → harvest → retain → withdraw/redeem/in-k
 
 ## 11.4 Invariant Tests
 
-**File:** `test/invariant/RobinHarvestInvariant.t.sol`
-
+### RobinHarvestInvariant.t.sol
 **Handler:** `RobinHarvestHandler` — random deposit, withdraw, redeemInKind, accrueAndHarvest.
 
 | Invariant | Property |
@@ -76,6 +79,16 @@ These combine deposit → deploy → harvest → retain → withdraw/redeem/in-k
 | `invariant_noFeesOnPrincipal` | Fees bounded / not draining principal unboundedly |
 | `invariant_growthExposureCaps` | Stock exposure ≤ config + tolerance |
 | `invariant_coreRetainsNothing` | Core strategy stock balance always 0 |
+
+### RobinHarvestLpInvariant.t.sol
+**Handler:** `LpHarvestHandler` — random deposit, withdraw, harvest for LP vaults.
+
+| Invariant | Property |
+|---|---|
+| `invariant_lpAccountingConserved` | Deployed LP assets + vault idle = NAV |
+| `invariant_lpTotalAssetsNonNegative` | Total assets strictly ≥ 0 |
+| `invariant_noRewardTokensStranded` | Reward tokens fully processed / 0 stranded |
+| `invariant_withdrawBoundedByNav` | Withdrawals strictly bounded by available NAV |
 
 `invariant_lossBoundsRespected` — documented placeholder (enforced by reverts in handler).
 
