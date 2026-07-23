@@ -109,21 +109,19 @@ contract DeployRobinHarvest is Script {
             rewardRegistry
         );
 
-        deployed = DeploymentAddresses({
-            manager: manager,
-            oracleRegistry: oracleRegistry,
-            rewardRegistry: rewardRegistry,
-            router: router,
-            coreAccountant: coreAccountant,
-            growthAccountant: growthAccountant,
-            lpAccountant: lpAccountant,
-            coreVault: coreVault,
-            coreStrategy: coreStrategy,
-            growthVault: growthVault,
-            growthStrategy: growthStrategy,
-            lpVault: lpVault,
-            lpStrategy: lpStrategy
-        });
+        deployed.manager = manager;
+        deployed.oracleRegistry = oracleRegistry;
+        deployed.rewardRegistry = rewardRegistry;
+        deployed.router = router;
+        deployed.coreAccountant = coreAccountant;
+        deployed.growthAccountant = growthAccountant;
+        deployed.lpAccountant = lpAccountant;
+        deployed.coreVault = coreVault;
+        deployed.coreStrategy = coreStrategy;
+        deployed.growthVault = growthVault;
+        deployed.growthStrategy = growthStrategy;
+        deployed.lpVault = lpVault;
+        deployed.lpStrategy = lpStrategy;
     }
 
     function _loadConfig() internal view returns (DeploymentConfig memory config) {

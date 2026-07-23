@@ -106,8 +106,12 @@ contract ValidateRobinHarvest is Script, ConfigureRobinHarvest {
         );
         _canCall(manager, config.roles.strategyManager, config.addresses.lpStrategy, LpStrategy.setGauge.selector);
         _canCall(manager, config.roles.strategyManager, config.addresses.lpStrategy, LpStrategy.setMaxSlippage.selector);
-        _canCall(manager, config.roles.strategyManager, config.addresses.lpStrategy, LpStrategy.pauseCompounding.selector);
-        _canCall(manager, config.roles.strategyManager, config.addresses.lpStrategy, LpStrategy.resumeCompounding.selector);
+        _canCall(
+            manager, config.roles.strategyManager, config.addresses.lpStrategy, LpStrategy.pauseCompounding.selector
+        );
+        _canCall(
+            manager, config.roles.strategyManager, config.addresses.lpStrategy, LpStrategy.resumeCompounding.selector
+        );
 
         _canCall(
             manager,
