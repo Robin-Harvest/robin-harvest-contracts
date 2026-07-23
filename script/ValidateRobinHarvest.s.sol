@@ -9,6 +9,7 @@ import {ExecutionRouter} from "../src/router/ExecutionRouter.sol";
 import {OracleRegistry} from "../src/registries/OracleRegistry.sol";
 import {RewardRegistry} from "../src/registries/RewardRegistry.sol";
 import {GrowthStrategy} from "../src/strategies/GrowthStrategy.sol";
+import {LpStrategy} from "../src/strategies/LpStrategy.sol";
 import {StrategyBase} from "../src/strategies/StrategyBase.sol";
 import {RobinVault} from "../src/vaults/RobinVault.sol";
 import {ConfigureRobinHarvest} from "./ConfigureRobinHarvest.s.sol";
@@ -54,6 +55,9 @@ contract ValidateRobinHarvest is Script, ConfigureRobinHarvest {
         _requireAuthority(config.addresses.coreStrategy, config.addresses.manager);
         _requireAuthority(config.addresses.growthVault, config.addresses.manager);
         _requireAuthority(config.addresses.growthStrategy, config.addresses.manager);
+        _requireAuthority(config.addresses.lpAccountant, config.addresses.manager);
+        _requireAuthority(config.addresses.lpVault, config.addresses.manager);
+        _requireAuthority(config.addresses.lpStrategy, config.addresses.manager);
     }
 
     function _requireRoles(InitConfig memory config, AccessManager manager) private view {
@@ -74,13 +78,17 @@ contract ValidateRobinHarvest is Script, ConfigureRobinHarvest {
     function _requireSelectorRoles(InitConfig memory config, AccessManager manager) private view {
         _canCall(manager, config.roles.strategyManager, config.addresses.coreVault, RobinVault.setStrategy.selector);
         _canCall(manager, config.roles.strategyManager, config.addresses.growthVault, RobinVault.setStrategy.selector);
+        _canCall(manager, config.roles.strategyManager, config.addresses.lpVault, RobinVault.setStrategy.selector);
         _canCall(manager, config.roles.keeper, config.addresses.coreVault, RobinVault.deploy.selector);
         _canCall(manager, config.roles.keeper, config.addresses.growthVault, RobinVault.deploy.selector);
+        _canCall(manager, config.roles.keeper, config.addresses.lpVault, RobinVault.deploy.selector);
         _canCall(manager, config.roles.securityCouncil, config.addresses.coreVault, RobinVault.pause.selector);
         _canCall(manager, config.roles.securityCouncil, config.addresses.growthVault, RobinVault.pause.selector);
+        _canCall(manager, config.roles.securityCouncil, config.addresses.lpVault, RobinVault.pause.selector);
 
         _canCall(manager, config.roles.keeper, config.addresses.coreStrategy, StrategyBase.harvest.selector);
         _canCall(manager, config.roles.keeper, config.addresses.growthStrategy, StrategyBase.harvest.selector);
+        _canCall(manager, config.roles.keeper, config.addresses.lpStrategy, StrategyBase.harvest.selector);
         _canCall(
             manager, config.roles.rewardManager, config.addresses.coreStrategy, StrategyBase.addRewardToken.selector
         );
@@ -89,11 +97,20 @@ contract ValidateRobinHarvest is Script, ConfigureRobinHarvest {
         );
         _canCall(manager, config.roles.securityCouncil, config.addresses.coreStrategy, StrategyBase.pause.selector);
         _canCall(manager, config.roles.securityCouncil, config.addresses.growthStrategy, StrategyBase.pause.selector);
+        _canCall(manager, config.roles.securityCouncil, config.addresses.lpStrategy, StrategyBase.pause.selector);
         _canCall(
             manager,
             config.roles.strategyManager,
             config.addresses.growthStrategy,
             GrowthStrategy.setNavHaircutBps.selector
+        );
+        _canCall(manager, config.roles.strategyManager, config.addresses.lpStrategy, LpStrategy.setGauge.selector);
+        _canCall(manager, config.roles.strategyManager, config.addresses.lpStrategy, LpStrategy.setMaxSlippage.selector);
+        _canCall(
+            manager, config.roles.strategyManager, config.addresses.lpStrategy, LpStrategy.pauseCompounding.selector
+        );
+        _canCall(
+            manager, config.roles.strategyManager, config.addresses.lpStrategy, LpStrategy.resumeCompounding.selector
         );
 
         _canCall(
@@ -125,6 +142,15 @@ contract ValidateRobinHarvest is Script, ConfigureRobinHarvest {
             config.addresses.growthVault,
             config.addresses.growthStrategy,
             config.addresses.growthAccountant,
+            config.feeRecipient,
+            config.eligibilityThreshold,
+            config.strategyMigrationDelay,
+            config.feeConfig
+        );
+        _requireVault(
+            config.addresses.lpVault,
+            config.addresses.lpStrategy,
+            config.addresses.lpAccountant,
             config.feeRecipient,
             config.eligibilityThreshold,
             config.strategyMigrationDelay,

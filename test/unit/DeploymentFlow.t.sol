@@ -147,7 +147,11 @@ contract DeploymentFlowTest is Test {
                 maxSlippageBps: 500,
                 swapDeadlineDelay: 1800,
                 eligibilityThreshold: 0,
-                strategyMigrationDelay: 1 days
+                strategyMigrationDelay: 1 days,
+                lpToken: makeAddr("lpToken"),
+                pairedToken: makeAddr("pairedToken"),
+                dexAdapter: makeAddr("dexAdapter"),
+                dexRouter: makeAddr("dexRouter")
             })
         );
     }
@@ -219,7 +223,10 @@ contract DeploymentFlowTest is Test {
                 coreAccountant: address(deployed.coreAccountant),
                 growthVault: address(deployed.growthVault),
                 growthStrategy: address(deployed.growthStrategy),
-                growthAccountant: address(deployed.growthAccountant)
+                growthAccountant: address(deployed.growthAccountant),
+                lpVault: address(deployed.lpVault),
+                lpStrategy: address(deployed.lpStrategy),
+                lpAccountant: address(deployed.lpAccountant)
             }),
             roles: ConfigureRobinHarvest.RoleHolders({
                 governance: address(configureHarness),
