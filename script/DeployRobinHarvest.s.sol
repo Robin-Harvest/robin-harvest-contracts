@@ -10,13 +10,19 @@ import {OracleRegistry} from "../src/registries/OracleRegistry.sol";
 import {RewardRegistry} from "../src/registries/RewardRegistry.sol";
 import {CoreStrategy} from "../src/strategies/CoreStrategy.sol";
 import {GrowthStrategy} from "../src/strategies/GrowthStrategy.sol";
-import {LpStrategy} from "../src/strategies/LpStrategy.sol";
+import {ConcentratedLiquidityStrategy} from "../src/strategies/ConcentratedLiquidityStrategy.sol";
+import {StaticRangeRebalancePolicy} from "../src/policies/StaticRangeRebalancePolicy.sol";
 import {RobinVault} from "../src/vaults/RobinVault.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IIndexFinanceCore} from "../src/interfaces/external/IIndexFinanceCore.sol";
+import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import {IPositionManager} from "@uniswap/v4-periphery/src/interfaces/IPositionManager.sol";
+import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 
-/// @notice Deterministic deployment script for Robin Harvest Core and Growth products.
-/// @dev Addresses in `.env` must be confirmed against official Robinhood Chain sources before production use.
+/// @notice Deploys the Core, Growth, and Uniswap v4 concentrated-liquidity products.
+/// @dev The CL product is hookless and single-pool. Governance configures the swap route after deployment.
 contract DeployRobinHarvest is Script {
     struct DeploymentConfig {
         address governance;
@@ -24,12 +30,15 @@ contract DeployRobinHarvest is Script {
         address indexFinance;
         uint16 maxSlippageBps;
         uint48 swapDeadlineDelay;
-        uint256 eligibilityThreshold;
-        uint256 strategyMigrationDelay;
-        address lpToken;
+        address poolManager;
+        address positionManager;
         address pairedToken;
-        address dexAdapter;
-        address dexRouter;
+        uint24 poolFee;
+        int24 tickSpacing;
+        address hooks;
+        int24 policyHalfWidth;
+        int24 policyMinTickWidth;
+        int24 policyMaxTickWidth;
     }
 
     struct DeploymentAddresses {
@@ -39,13 +48,14 @@ contract DeployRobinHarvest is Script {
         ExecutionRouter router;
         RobinAccountant coreAccountant;
         RobinAccountant growthAccountant;
-        RobinAccountant lpAccountant;
+        RobinAccountant clAccountant;
         RobinVault coreVault;
         CoreStrategy coreStrategy;
         RobinVault growthVault;
         GrowthStrategy growthStrategy;
-        RobinVault lpVault;
-        LpStrategy lpStrategy;
+        RobinVault clVault;
+        ConcentratedLiquidityStrategy clStrategy;
+        StaticRangeRebalancePolicy clPolicy;
     }
 
     function run() external returns (DeploymentAddresses memory deployed) {
@@ -53,7 +63,6 @@ contract DeployRobinHarvest is Script {
         vm.startBroadcast();
         deployed = _deploy(config);
         vm.stopBroadcast();
-
         _logDeployment(deployed);
     }
 
@@ -64,7 +73,7 @@ contract DeployRobinHarvest is Script {
         ExecutionRouter router = new ExecutionRouter(address(manager), oracleRegistry);
         RobinAccountant coreAccountant = new RobinAccountant(IERC20(config.indexToken), address(manager));
         RobinAccountant growthAccountant = new RobinAccountant(IERC20(config.indexToken), address(manager));
-        RobinAccountant lpAccountant = new RobinAccountant(IERC20(config.indexToken), address(manager));
+        RobinAccountant clAccountant = new RobinAccountant(IERC20(config.indexToken), address(manager));
 
         RobinVault coreVault =
             new RobinVault(IERC20(config.indexToken), "Robin INDEX Core Vault", "rhINDEX-C", address(manager));
@@ -94,34 +103,46 @@ contract DeployRobinHarvest is Script {
             config.swapDeadlineDelay
         );
 
-        RobinVault lpVault =
-            new RobinVault(IERC20(config.indexToken), "Robin INDEX LP Vault", "rhINDEX-LP", address(manager));
-        LpStrategy lpStrategy = new LpStrategy(
-            address(lpVault),
+        PoolKey memory key = PoolKey({
+            currency0: Currency.wrap(config.indexToken < config.pairedToken ? config.indexToken : config.pairedToken),
+            currency1: Currency.wrap(config.indexToken < config.pairedToken ? config.pairedToken : config.indexToken),
+            fee: config.poolFee,
+            tickSpacing: config.tickSpacing,
+            hooks: IHooks(config.hooks)
+        });
+        StaticRangeRebalancePolicy policy = new StaticRangeRebalancePolicy(
+            address(manager), config.policyHalfWidth, config.policyMinTickWidth, config.policyMaxTickWidth
+        );
+        RobinVault clVault =
+            new RobinVault(IERC20(config.indexToken), "Robin INDEX Concentrated Vault", "rhINDEX-CL", address(manager));
+        ConcentratedLiquidityStrategy clStrategy = new ConcentratedLiquidityStrategy(
+            address(clVault),
             IERC20(config.indexToken),
             address(manager),
-            config.lpToken,
-            config.pairedToken,
-            config.dexRouter,
-            config.dexAdapter,
+            IPoolManager(config.poolManager),
+            IPositionManager(config.positionManager),
+            key,
             router,
             oracleRegistry,
-            rewardRegistry
+            policy
         );
 
-        deployed.manager = manager;
-        deployed.oracleRegistry = oracleRegistry;
-        deployed.rewardRegistry = rewardRegistry;
-        deployed.router = router;
-        deployed.coreAccountant = coreAccountant;
-        deployed.growthAccountant = growthAccountant;
-        deployed.lpAccountant = lpAccountant;
-        deployed.coreVault = coreVault;
-        deployed.coreStrategy = coreStrategy;
-        deployed.growthVault = growthVault;
-        deployed.growthStrategy = growthStrategy;
-        deployed.lpVault = lpVault;
-        deployed.lpStrategy = lpStrategy;
+        deployed = DeploymentAddresses({
+            manager: manager,
+            oracleRegistry: oracleRegistry,
+            rewardRegistry: rewardRegistry,
+            router: router,
+            coreAccountant: coreAccountant,
+            growthAccountant: growthAccountant,
+            clAccountant: clAccountant,
+            coreVault: coreVault,
+            coreStrategy: coreStrategy,
+            growthVault: growthVault,
+            growthStrategy: growthStrategy,
+            clVault: clVault,
+            clStrategy: clStrategy,
+            clPolicy: policy
+        });
     }
 
     function _loadConfig() internal view returns (DeploymentConfig memory config) {
@@ -130,12 +151,15 @@ contract DeployRobinHarvest is Script {
         config.indexFinance = vm.envAddress("INDEX_FINANCE_ADDRESS");
         config.maxSlippageBps = uint16(vm.envUint("MAX_SLIPPAGE_BPS"));
         config.swapDeadlineDelay = uint48(vm.envUint("SWAP_DEADLINE_DELAY"));
-        config.eligibilityThreshold = vm.envUint("ELIGIBILITY_THRESHOLD");
-        config.strategyMigrationDelay = vm.envUint("STRATEGY_MIGRATION_DELAY");
-        config.lpToken = vm.envAddress("LP_TOKEN_ADDRESS");
-        config.pairedToken = vm.envAddress("PAIRED_TOKEN_ADDRESS");
-        config.dexAdapter = vm.envAddress("DEX_ADAPTER_ADDRESS");
-        config.dexRouter = vm.envAddress("DEX_ROUTER_ADDRESS");
+        config.poolManager = vm.envAddress("V4_POOL_MANAGER_ADDRESS");
+        config.positionManager = vm.envAddress("V4_POSITION_MANAGER_ADDRESS");
+        config.pairedToken = vm.envAddress("V4_PAIRED_TOKEN_ADDRESS");
+        config.poolFee = uint24(vm.envUint("V4_POOL_FEE"));
+        config.tickSpacing = int24(vm.envInt("V4_TICK_SPACING"));
+        config.hooks = vm.envOr("V4_HOOKS_ADDRESS", address(0));
+        config.policyHalfWidth = int24(vm.envInt("CL_POLICY_HALF_WIDTH"));
+        config.policyMinTickWidth = int24(vm.envInt("CL_POLICY_MIN_TICK_WIDTH"));
+        config.policyMaxTickWidth = int24(vm.envInt("CL_POLICY_MAX_TICK_WIDTH"));
     }
 
     function _logDeployment(DeploymentAddresses memory deployed) private pure {
@@ -145,12 +169,13 @@ contract DeployRobinHarvest is Script {
         console2.log("EXECUTION_ROUTER_ADDRESS=", address(deployed.router));
         console2.log("CORE_ACCOUNTANT_ADDRESS=", address(deployed.coreAccountant));
         console2.log("GROWTH_ACCOUNTANT_ADDRESS=", address(deployed.growthAccountant));
-        console2.log("LP_ACCOUNTANT_ADDRESS=", address(deployed.lpAccountant));
+        console2.log("CL_ACCOUNTANT_ADDRESS=", address(deployed.clAccountant));
         console2.log("CORE_VAULT_ADDRESS=", address(deployed.coreVault));
         console2.log("CORE_STRATEGY_ADDRESS=", address(deployed.coreStrategy));
         console2.log("GROWTH_VAULT_ADDRESS=", address(deployed.growthVault));
         console2.log("GROWTH_STRATEGY_ADDRESS=", address(deployed.growthStrategy));
-        console2.log("LP_VAULT_ADDRESS=", address(deployed.lpVault));
-        console2.log("LP_STRATEGY_ADDRESS=", address(deployed.lpStrategy));
+        console2.log("CL_VAULT_ADDRESS=", address(deployed.clVault));
+        console2.log("CL_STRATEGY_ADDRESS=", address(deployed.clStrategy));
+        console2.log("CL_POLICY_ADDRESS=", address(deployed.clPolicy));
     }
 }

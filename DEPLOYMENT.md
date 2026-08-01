@@ -28,10 +28,16 @@ VERIFY_CONTRACTS=true
 GOVERNANCE_ADDRESS=            # Address of the multisig
 INDEX_TOKEN_ADDRESS=           # Address of INDEX token
 INDEX_FINANCE_ADDRESS=         # Address of Index Finance Core
-DEX_ADAPTER_ADDRESS=           # Address of your ExecutionRouter adapter (e.g. UniswapV2Adapter)
-DEX_ROUTER_ADDRESS=            # Address of the DEX router for LP (e.g. UniswapV2Router)
-LP_TOKEN_ADDRESS=              # Address of the target LP token pool
-PAIRED_TOKEN_ADDRESS=          # Address of the paired asset in the LP (e.g. WETH)
+SWAP_ADAPTER_ADDRESS=          # Governance-approved exact-input adapter
+V4_POOL_MANAGER_ADDRESS=       # Official Uniswap v4 PoolManager
+V4_POSITION_MANAGER_ADDRESS=   # Official Uniswap v4 PositionManager
+V4_PAIRED_TOKEN_ADDRESS=       # Higher-sorted currency paired with INDEX
+V4_POOL_FEE=3000
+V4_TICK_SPACING=60
+V4_HOOKS_ADDRESS=0x0000000000000000000000000000000000000000
+CL_POLICY_HALF_WIDTH=600
+CL_POLICY_MIN_TICK_WIDTH=120
+CL_POLICY_MAX_TICK_WIDTH=2400
 ```
 
 ### Protocol Configuration
@@ -42,9 +48,22 @@ ELIGIBILITY_THRESHOLD=10000000000  # Example 10k INDEX (scaled)
 STRATEGY_MIGRATION_DELAY=86400     # 24 hours
 ```
 
+## 0. Testnet Mock Infrastructure (Optional)
+
+If you are deploying to a testnet (e.g. Sepolia or Robinhood Testnet) and do not have access to real live ERC20 token dependencies, you can deploy a full suite of mock contracts to simulate the live environment.
+
+```bash
+forge script script/DeployMocks.s.sol \
+    --rpc-url $ROBINHOOD_RPC_URL \
+    --private-key $DEPLOYER_PRIVATE_KEY \
+    --broadcast
+```
+
+*This deploys `MockINDEX`, `MockStockToken`, `MockIndexFinanceCore`, and `MockDex`. The printed paired-token and swap-adapter addresses can be copied into the **Protocol Dependencies** section.*
+
 ## 1. Deployment Order
 
-The deployment script deterministically provisions all three Vaults (Core, Growth, LP), Strategies, Registries, and the Router.
+The deployment script provisions Core, Growth, and the Uniswap v4 concentrated-liquidity vaults, strategies, registries, policy, and router.
 
 ```bash
 forge script script/DeployRobinHarvest.s.sol \
@@ -99,8 +118,8 @@ Upon successful deployment, you should have the following unique contract instan
 | **AccessManager** | 1 | Global role-based access controller |
 | **Registries** | 2 | `OracleRegistry`, `RewardRegistry` |
 | **ExecutionRouter** | 1 | Handles external DEX swaps |
-| **Vaults** | 3 | `rhINDEX-C`, `rhINDEX-G`, `rhINDEX-LP` |
-| **Strategies** | 3 | `CoreStrategy`, `GrowthStrategy`, `LpStrategy` |
+| **Vaults** | 3 | `rhINDEX-C`, `rhINDEX-G`, `rhINDEX-CL` |
+| **Strategies** | 3 | `CoreStrategy`, `GrowthStrategy`, `ConcentratedLiquidityStrategy` |
 | **Accountants** | 3 | Fee routing modules for each vault |
 
 ## 6. Upgrade Procedure
@@ -119,9 +138,10 @@ During migration, all vault funds are pulled from the old strategy and pushed to
 
 If a critical vulnerability or external dependency failure occurs:
 
-1. **Pause Strategies**: The `SECURITY_COUNCIL_ROLE` should call `pause()` on `CoreStrategy`, `GrowthStrategy`, and `LpStrategy`. This stops all deposits, harvests, and capital deployments.
-2. **Pause Vaults**: Call `pause()` on the Vaults to temporarily halt withdrawals if the accounting system is compromised.
-3. **Emergency Withdraw**: Once strategies are paused, the `SECURITY_COUNCIL_ROLE` can call `emergencyWithdraw()` on the strategies to force-liquidate all external positions and pull funds back to the strategy contracts.
+1. **Pause Strategies**: The `SECURITY_COUNCIL_ROLE` should call `pause()` on `CoreStrategy`, `GrowthStrategy`, and `ConcentratedLiquidityStrategy`.
+2. **Close CL positions**: Call `emergencyClosePositions()` while the CL strategy is paused.
+3. **Return CL assets**: Call `emergencyReturnAssetsToVault()` after confirming there are no active positions.
+4. **Pause Vaults**: Call `pause()` on the Vaults to temporarily halt withdrawals if the accounting system is compromised.
 
 ## 8. Common Failures
 

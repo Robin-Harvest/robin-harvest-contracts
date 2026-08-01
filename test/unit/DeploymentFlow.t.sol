@@ -9,6 +9,7 @@ import {AccessManager} from "../../src/access/AccessManager.sol";
 import {ExecutionRouter} from "../../src/router/ExecutionRouter.sol";
 import {OracleRegistry} from "../../src/registries/OracleRegistry.sol";
 import {RewardRegistry} from "../../src/registries/RewardRegistry.sol";
+import {ConcentratedLiquidityStrategy} from "../../src/strategies/ConcentratedLiquidityStrategy.sol";
 import {StrategyBase} from "../../src/strategies/StrategyBase.sol";
 import {RobinVault} from "../../src/vaults/RobinVault.sol";
 import {
@@ -22,6 +23,8 @@ import {MockINDEX} from "../mocks/MockINDEX.sol";
 import {MockIndexFinanceCore} from "../mocks/MockIndexFinanceCore.sol";
 import {MockOracle} from "../mocks/MockOracle.sol";
 import {MockStockToken} from "../mocks/MockStockToken.sol";
+import {MockV4PoolManager} from "../mocks/MockV4PoolManager.sol";
+import {MockV4PositionManager} from "../mocks/MockV4PositionManager.sol";
 
 contract DeployHarness is DeployRobinHarvest {
     function deployPublic(DeploymentConfig memory config) external returns (DeploymentAddresses memory deployed) {
@@ -146,12 +149,15 @@ contract DeploymentFlowTest is Test {
                 indexFinance: address(indexFinance),
                 maxSlippageBps: 500,
                 swapDeadlineDelay: 1800,
-                eligibilityThreshold: 0,
-                strategyMigrationDelay: 1 days,
-                lpToken: makeAddr("lpToken"),
-                pairedToken: makeAddr("pairedToken"),
-                dexAdapter: makeAddr("dexAdapter"),
-                dexRouter: makeAddr("dexRouter")
+                poolManager: address(new MockV4PoolManager()),
+                positionManager: address(new MockV4PositionManager()),
+                pairedToken: address(rewardToken),
+                poolFee: 3_000,
+                tickSpacing: 60,
+                hooks: address(0),
+                policyHalfWidth: 600,
+                policyMinTickWidth: 120,
+                policyMaxTickWidth: 2_400
             })
         );
     }
@@ -224,9 +230,9 @@ contract DeploymentFlowTest is Test {
                 growthVault: address(deployed.growthVault),
                 growthStrategy: address(deployed.growthStrategy),
                 growthAccountant: address(deployed.growthAccountant),
-                lpVault: address(deployed.lpVault),
-                lpStrategy: address(deployed.lpStrategy),
-                lpAccountant: address(deployed.lpAccountant)
+                clVault: address(deployed.clVault),
+                clStrategy: address(deployed.clStrategy),
+                clAccountant: address(deployed.clAccountant)
             }),
             roles: ConfigureRobinHarvest.RoleHolders({
                 governance: address(configureHarness),
@@ -243,7 +249,8 @@ contract DeploymentFlowTest is Test {
             approvedDexAdapters: approvedDexAdapters,
             oracles: oracles,
             rewards: rewards,
-            routes: routes
+            routes: routes,
+            swapAdapter: dexAdapter
         });
     }
 
@@ -260,9 +267,29 @@ contract DeploymentFlowTest is Test {
             manager.canCall(keeper, address(deployed.coreStrategy), StrategyBase.harvest.selector);
         (bool councilCanPause,) =
             manager.canCall(securityCouncil, address(deployed.growthVault), RobinVault.pause.selector);
+        (bool managerCanEnterWithdrawOnly,) = manager.canCall(
+            strategyManager, address(deployed.clStrategy), ConcentratedLiquidityStrategy.enterWithdrawOnly.selector
+        );
+        (bool managerCanEnterHarvestOnly,) = manager.canCall(
+            strategyManager, address(deployed.clStrategy), ConcentratedLiquidityStrategy.enterHarvestOnly.selector
+        );
+        (bool councilCanEmergencyClose,) = manager.canCall(
+            securityCouncil,
+            address(deployed.clStrategy),
+            ConcentratedLiquidityStrategy.emergencyClosePositions.selector
+        );
+        (bool councilCanEmergencyReturn,) = manager.canCall(
+            securityCouncil,
+            address(deployed.clStrategy),
+            ConcentratedLiquidityStrategy.emergencyReturnAssetsToVault.selector
+        );
         assertTrue(keeperCanDeploy);
         assertTrue(keeperCanHarvest);
         assertTrue(councilCanPause);
+        assertTrue(managerCanEnterWithdrawOnly);
+        assertTrue(managerCanEnterHarvestOnly);
+        assertTrue(councilCanEmergencyClose);
+        assertTrue(councilCanEmergencyReturn);
 
         assertEq(address(deployed.coreVault.strategy()), address(deployed.coreStrategy));
         assertEq(address(deployed.growthVault.strategy()), address(deployed.growthStrategy));

@@ -3,6 +3,8 @@ pragma solidity 0.8.25;
 
 import {AccessManaged} from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {Constants} from "../libraries/Constants.sol";
 import {Events} from "../libraries/Events.sol";
 import {
@@ -94,6 +96,33 @@ contract OracleRegistry is IOracleRegistry, AccessManaged, Events {
     function isHealthy(address asset) external view returns (bool healthy) {
         // slither-disable-next-line unused-return
         (healthy,,) = this.tryGetValidatedPrice(asset);
+    }
+
+    /// @inheritdoc IOracleRegistry
+    function getCrossRate(address token0, address token1) external view returns (uint256 price, bool healthy) {
+        // slither-disable-next-line unused-return
+        (bool healthy0, uint256 price0,) = this.tryGetValidatedPrice(token0);
+        // slither-disable-next-line unused-return
+        (bool healthy1, uint256 price1,) = this.tryGetValidatedPrice(token1);
+        if (!healthy0 || !healthy1 || price1 == 0) return (0, false);
+
+        uint8 decimals0 = IERC20Metadata(token0).decimals();
+        uint8 decimals1 = IERC20Metadata(token1).decimals();
+        price = price0.mulDiv(10 ** decimals1, price1).mulDiv(1e18, 10 ** decimals0);
+        healthy = price != 0;
+    }
+
+    /// @inheritdoc IOracleRegistry
+    function getOracleSqrtPriceX96(address token0, address token1)
+        external
+        view
+        returns (uint160 sqrtPriceX96, bool healthy)
+    {
+        (uint256 crossRate, bool rateHealthy) = this.getCrossRate(token0, token1);
+        if (!rateHealthy) return (0, false);
+        uint256 ratioX192 = crossRate << 192;
+        sqrtPriceX96 = uint160(Math.sqrt(ratioX192 / 1e18));
+        healthy = sqrtPriceX96 >= TickMath.MIN_SQRT_PRICE && sqrtPriceX96 < TickMath.MAX_SQRT_PRICE;
     }
 
     function setOracleConfig(address asset, OracleConfig calldata config) external restricted {

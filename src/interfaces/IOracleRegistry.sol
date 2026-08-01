@@ -39,4 +39,22 @@ interface IOracleRegistry {
     /// @param asset Asset whose price-read state changes.
     /// @param paused New pause state.
     function setOraclePaused(address asset, bool paused) external;
+
+    /// @notice Returns a normalized cross-rate between two assets using validated oracle feeds.
+    /// @dev Price is token1 per token0 at 1e18 precision after decimal normalization.
+    /// @param token0 Lower-sorted pool token address.
+    /// @param token1 Higher-sorted pool token address.
+    /// @return price Oracle-implied price of token1 in terms of token0 at 1e18 precision.
+    /// @return healthy True when both feeds are valid and the cross-rate is usable.
+    function getCrossRate(address token0, address token1) external view returns (uint256 price, bool healthy);
+
+    /// @notice Returns a conservative oracle-implied sqrtPriceX96 for a token pair.
+    /// @param token0 Lower-sorted pool token address.
+    /// @param token1 Higher-sorted pool token address.
+    /// @return sqrtPriceX96 Oracle-implied sqrt price compatible with Uniswap Q64.96 encoding.
+    /// @return healthy True when the oracle cross-rate is usable.
+    function getOracleSqrtPriceX96(address token0, address token1)
+        external
+        view
+        returns (uint160 sqrtPriceX96, bool healthy);
 }

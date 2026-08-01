@@ -76,3 +76,59 @@ error InvalidAccounting();
 /// @notice Thrown when a cooldown has not elapsed.
 /// @param availableAt Earliest permitted execution timestamp.
 error CooldownActive(uint256 availableAt);
+
+/// @notice Thrown when a tick range fails strategy validation.
+/// @param lower Provided lower tick.
+/// @param upper Provided upper tick.
+error InvalidTickRange(int24 lower, int24 upper);
+
+/// @notice Thrown when a tick is outside Uniswap TickMath bounds.
+/// @param tick Invalid tick value.
+error TickOutOfBounds(int24 tick);
+
+/// @notice Thrown when a tick is not aligned to pool tick spacing.
+/// @param tick Misaligned tick.
+/// @param tickSpacing Required tick spacing multiple.
+error TickNotSpaced(int24 tick, int24 tickSpacing);
+
+/// @notice Thrown when a tick range width violates policy bounds.
+/// @param width Observed tick width.
+/// @param minWidth Minimum permitted width.
+/// @param maxWidth Maximum permitted width.
+error TickWidthOutOfBounds(int24 width, int24 minWidth, int24 maxWidth);
+
+/// @notice Thrown when an operation is invalid for the current strategy mode.
+/// @param currentMode Encoded current strategy mode.
+error InvalidStrategyMode(uint8 currentMode);
+
+/// @notice Thrown when oracle, spot, and TWAP prices diverge beyond policy.
+/// @param deviationBps Observed deviation in basis points.
+/// @param maxDeviationBps Maximum permitted deviation in basis points.
+error HardOracleFailure(uint256 deviationBps, uint256 maxDeviationBps);
+
+/// @notice Thrown when a withdrawal fails TWAP safety checks.
+/// @param deviationBps Observed deviation in basis points.
+/// @param maxDeviationBps Maximum permitted deviation in basis points.
+error WithdrawSafetyFailure(uint256 deviationBps, uint256 maxDeviationBps);
+
+/// @notice Thrown when active positions remain while an operation requires none.
+/// @param remaining Count of remaining active positions.
+error ActivePositionsRemain(uint256 remaining);
+
+/// @notice Thrown when governance attempts to mutate configuration while paused.
+error GovernanceBlockedWhilePaused();
+
+/// @notice Thrown when a managed position record is missing or inactive.
+/// @param tokenId Position NFT identifier.
+error UnknownPosition(uint256 tokenId);
+
+/// @notice Thrown when a position token ID is already present in the strategy set.
+/// @param tokenId Position NFT identifier.
+error PositionAlreadyTracked(uint256 tokenId);
+
+/// @notice Thrown when an amount cannot be represented by a V4 uint128 amount field.
+error V4AmountOverflow();
+
+/// @notice Thrown when adding a position would exceed the strategy's bounded position set.
+/// @param maximum Maximum number of active positions supported by the strategy.
+error ActivePositionLimitExceeded(uint256 maximum);

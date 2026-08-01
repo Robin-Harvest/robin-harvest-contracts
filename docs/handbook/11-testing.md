@@ -120,6 +120,9 @@ Examples:
 
 Mocks **do not** replace mainnet fork tests (listed as launch blocker).
 
+The CL strategy additionally requires regression coverage for current-timestamp TWAP expiry and exact-per-operation
+Permit2 approvals. See [`docs/SECURITY_HARDENING.md`](../SECURITY_HARDENING.md) for the selected security policies.
+
 ---
 
 ## 11.7 Running Tests

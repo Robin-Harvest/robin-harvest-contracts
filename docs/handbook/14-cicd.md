@@ -63,7 +63,10 @@ No dedicated coverage workflow in repo currently. Local:
 forge coverage
 ```
 
-**Gap:** No CI coverage threshold enforced (OPEN_QUESTIONS).
+**Current gap:** Foundry coverage instrumentation disables the production
+`viaIR` configuration and currently fails on `ConcentratedLiquidityStrategy` with
+`stack too deep`. No CI coverage threshold is enforced until an instrumented build
+works (see [`../STATIC_ANALYSIS.md`](../STATIC_ANALYSIS.md)).
 
 ---
 
@@ -73,6 +76,12 @@ Not automated in CI beyond `forge build --sizes`. Optional:
 
 ```bash
 forge snapshot
+```
+
+The current targeted CL gas report is generated with:
+
+```bash
+forge test --gas-report test/unit/ConcentratedLiquidityStrategy.t.sol
 ```
 
 ---

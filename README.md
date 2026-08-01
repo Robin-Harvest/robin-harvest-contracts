@@ -55,14 +55,14 @@ slither .
 | 12–13 | GrowthStrategy (retention, liquidation order, conservative NAV, category policy) | Complete |
 | 14 | Optional In-Kind Redemption UX, integration, and system tests | Complete |
 | 15 | Deployment scripts and operational docs | Complete |
-| 16 | rhINDEX-LP Strategy (DEX liquidity provision, Gauge staking, optimal deposit swap math, LP valuation, stateful LP invariant suite) | Complete |
+| 16 | rhINDEX-CL Strategy (Uniswap v4 concentrated liquidity, oracle-constrained swaps, position management, fuzz/invariant suite) | Complete |
 
 ## Features
 
 - ERC-4626 compliant vault architecture
-- **Three Vault Strategy Products**: Core (Lending Yield), Growth (Stock Token Retention), and LP (DEX Liquidity Provision & Auto-compounding)
-- Automated optimal ratio swap calculation for single-sided INDEX deposits into DEX LP pools
-- Automated gauge staking and arbitrary reward token harvest & auto-compounding
+- **Three Vault Strategy Products**: Core (Lending Yield), Growth (Stock Token Retention), and CL (Uniswap v4 concentrated liquidity)
+- Policy-driven single-pool position ranges with strategy-owned tick validation
+- Oracle-constrained swaps and hookless v4 PositionManager action plans
 - Oracle-backed reward valuation & liveness-first accounting policy
 - Constrained execution router with max deviation protection
 - Configurable reward registry
@@ -96,9 +96,9 @@ flowchart TD
 
     Strategy --> Portfolio
 
-    %% LP Strategy flow
-    Strategy --> LpPair[DEX LP Pool]
-    LpPair --> Gauge[Gauge Staking]
+    %% Concentrated liquidity flow
+    Strategy --> PoolManager[Uniswap v4 PoolManager]
+    Strategy --> PositionManager[Uniswap v4 PositionManager]
 
     %% Optional in-kind redemption flow
     RobinVault -. redeemInKind .-> Portfolio
@@ -107,7 +107,7 @@ flowchart TD
 ### Strategy Products
 - **Core (`CoreStrategy`)**: Deposit INDEX into Index Finance → sell all rewards → compound.
 - **Growth (`GrowthStrategy`)**: Deposit INDEX into Index Finance → sell, retain, or ignore rewards → in-kind redemption.
-- **LP (`LpStrategy`)**: Optimal-ratio swap → add DEX liquidity → stake in Gauge → auto-compound rewards.
+- **CL (`ConcentratedLiquidityStrategy`)**: Oracle-checked allocation → mint/manage v4 position NFTs → collect and optionally compound fees.
 
 ### Redemption UX
 - **Standard ERC4626 `redeem()`**: INDEX only (liquidates retained assets or LP positions as necessary).
@@ -162,9 +162,15 @@ Before production:
 - [ ] Production DEX routes
 - [ ] Governance multisig
 - [ ] Timelock configuration
-- [ ] Mainnet fork tests
+- [x] Robinhood Chain V4 fork tests
+- [ ] Static-analysis findings and coverage gate
 - [ ] External audit
 - [ ] Audit remediation
+
+Hardening decisions, invariant documentation, and audit gates are tracked in
+[`docs/SECURITY_HARDENING.md`](docs/SECURITY_HARDENING.md),
+[`docs/INVARIANTS.md`](docs/INVARIANTS.md), and
+[`docs/AUDIT_READINESS.md`](docs/AUDIT_READINESS.md).
 
 ## Current Limitations & External Integrations
 
@@ -172,7 +178,7 @@ Current implementation assumes:
 - Official Index Finance integration is still provisional.
 - Production oracle addresses are not finalized.
 - Production DEX routes remain external configuration.
-- LP strategy not yet implemented (blocked on LP type confirmation).
+- CL V1 is hookless, single-pool, and uses an internal observation ring because v4 hookless pools have no native TWAP.
 
 ## Toolchain & Tests
 

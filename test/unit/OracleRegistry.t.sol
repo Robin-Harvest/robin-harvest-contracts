@@ -6,11 +6,17 @@ import {AccessManager} from "../../src/access/AccessManager.sol";
 import {OracleRegistry} from "../../src/registries/OracleRegistry.sol";
 import {OracleConfig} from "../../src/types/ProtocolTypes.sol";
 import {MockOracle} from "../mocks/MockOracle.sol";
+import {MockINDEX} from "../mocks/MockINDEX.sol";
+import {MockStockToken} from "../mocks/MockStockToken.sol";
 
 contract OracleRegistryTest is Test {
     AccessManager internal manager;
     OracleRegistry internal registry;
     MockOracle internal feed;
+    MockINDEX internal token0;
+    MockStockToken internal token1;
+    MockOracle internal token0Feed;
+    MockOracle internal token1Feed;
 
     address internal governance = makeAddr("governance");
     address internal asset = makeAddr("asset");
@@ -19,6 +25,10 @@ contract OracleRegistryTest is Test {
         manager = new AccessManager(governance);
         registry = new OracleRegistry(address(manager));
         feed = new MockOracle(8, 123_00000000);
+        token0 = new MockINDEX(18);
+        token1 = new MockStockToken("Token 1", "T1", 18);
+        token0Feed = new MockOracle(8, 2e8);
+        token1Feed = new MockOracle(8, 1e8);
     }
 
     function testGovernanceRegistersAndNormalizesPrice() public {
@@ -65,6 +75,17 @@ contract OracleRegistryTest is Test {
 
         vm.expectRevert();
         registry.getValidatedPrice(asset);
+    }
+
+    function testCrossRateIsToken1PerToken0() public {
+        vm.startPrank(governance);
+        registry.setOracleConfig(address(token0), _config(address(token0Feed), false));
+        registry.setOracleConfig(address(token1), _config(address(token1Feed), false));
+        vm.stopPrank();
+
+        (uint256 crossRate, bool healthy) = registry.getCrossRate(address(token0), address(token1));
+        assertTrue(healthy);
+        assertEq(crossRate, 2e18);
     }
 
     function testFuzzPositivePricesNormalize(uint96 rawPrice) public {

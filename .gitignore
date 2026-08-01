@@ -23,7 +23,20 @@ coverage/
 lcov.info
 crytic-export/
 slither.db.json
+.slither_cache/
 
 # Windows Alternate Data Streams
 *Zone.Identifier
 *:Zone.Identifier
+
+# Miscellaneous & Accidental artifacts
+node_modules/
+home/
+*.log
+*.bak
+*.orig
+*.swo
+*.tmp
+mint*.sh
+.gemini/
+.agents/
