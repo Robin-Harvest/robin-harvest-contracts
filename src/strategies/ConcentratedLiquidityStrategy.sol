@@ -435,7 +435,7 @@ contract ConcentratedLiquidityStrategy is StrategyBase, IConcentratedLiquiditySt
             _poolKey, lower, upper, liquidity, uint128(amount0), uint128(amount1), address(this), bytes("")
         );
         // PositionManager is immutable and the caller is protected by StrategyBase.nonReentrant.
-        // slither-disable-next-line reentrancy-benign
+        // slither-disable-next-line reentrancy-no-eth,reentrancy-benign
         _positionManager.modifyLiquidities(data, block.timestamp + 1 hours);
         _clearPermit2Approvals();
 

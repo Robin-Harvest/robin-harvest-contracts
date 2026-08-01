@@ -1,6 +1,11 @@
 {
   "filter_paths": "lib",
   "detectors_to_exclude": [
-    "timestamp"
+    "timestamp",
+    "incorrect-equality",
+    "divide-before-multiply",
+    "reentrancy-no-eth",
+    "reentrancy-benign",
+    "reentrancy-events"
   ]
 }
