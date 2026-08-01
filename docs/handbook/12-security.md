@@ -171,6 +171,9 @@ From README:
 
 CI runs `slither . --fail-pedantic`. Contracts include targeted suppressions with justifications (timestamp, reentrancy CEI exceptions, cyclomatic complexity on in-kind).
 
+The CL strategy security decisions are recorded in [`docs/SECURITY_HARDENING.md`](../SECURITY_HARDENING.md), including
+current-timestamp TWAP freshness, exact-per-operation Permit2 approvals, and sqrt-price deviation units.
+
 ---
 
 ## 12.14 Unmitigated / Accepted Risks

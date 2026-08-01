@@ -9,7 +9,7 @@ import {OracleRegistry} from "../src/registries/OracleRegistry.sol";
 import {RewardRegistry} from "../src/registries/RewardRegistry.sol";
 import {CoreStrategy} from "../src/strategies/CoreStrategy.sol";
 import {GrowthStrategy} from "../src/strategies/GrowthStrategy.sol";
-import {LpStrategy} from "../src/strategies/LpStrategy.sol";
+import {ConcentratedLiquidityStrategy} from "../src/strategies/ConcentratedLiquidityStrategy.sol";
 import {StrategyBase} from "../src/strategies/StrategyBase.sol";
 import {RobinVault} from "../src/vaults/RobinVault.sol";
 import {Constants} from "../src/libraries/Constants.sol";
@@ -35,9 +35,9 @@ contract ConfigureRobinHarvest is Script {
         address growthVault;
         address growthStrategy;
         address growthAccountant;
-        address lpVault;
-        address lpStrategy;
-        address lpAccountant;
+        address clVault;
+        address clStrategy;
+        address clAccountant;
     }
 
     struct RoleHolders {
@@ -78,6 +78,7 @@ contract ConfigureRobinHarvest is Script {
         OracleEntry[] oracles;
         RewardEntry[] rewards;
         RouteEntry[] routes;
+        address swapAdapter;
     }
 
     error LengthMismatch(bytes32 listName);
@@ -128,9 +129,9 @@ contract ConfigureRobinHarvest is Script {
             config.feeConfig
         );
         _configureVault(
-            config.addresses.lpVault,
-            config.addresses.lpStrategy,
-            config.addresses.lpAccountant,
+            config.addresses.clVault,
+            config.addresses.clStrategy,
+            config.addresses.clAccountant,
             config.feeRecipient,
             config.eligibilityThreshold,
             config.strategyMigrationDelay,
@@ -143,12 +144,12 @@ contract ConfigureRobinHarvest is Script {
     function _configureSelectorRoles(InitConfig memory config, AccessManager manager) internal {
         _setVaultSelectorRoles(manager, config.addresses.coreVault);
         _setVaultSelectorRoles(manager, config.addresses.growthVault);
-        _setVaultSelectorRoles(manager, config.addresses.lpVault);
+        _setVaultSelectorRoles(manager, config.addresses.clVault);
         _setStrategySelectorRoles(manager, config.addresses.coreStrategy);
         _setStrategySelectorRoles(manager, config.addresses.growthStrategy);
-        _setStrategySelectorRoles(manager, config.addresses.lpStrategy);
+        _setStrategySelectorRoles(manager, config.addresses.clStrategy);
         _setGrowthSelectorRoles(manager, config.addresses.growthStrategy);
-        _setLpSelectorRoles(manager, config.addresses.lpStrategy);
+        _setConcentratedSelectorRoles(manager, config.addresses.clStrategy);
         _setRegistryAndRouterSelectorRoles(manager, config);
     }
 
@@ -189,6 +190,10 @@ contract ConfigureRobinHarvest is Script {
         ExecutionRouter router = ExecutionRouter(config.addresses.router);
         OracleRegistry oracleRegistry = OracleRegistry(config.addresses.oracleRegistry);
         RewardRegistry rewardRegistry = RewardRegistry(config.addresses.rewardRegistry);
+
+        if (config.swapAdapter != address(0)) {
+            ConcentratedLiquidityStrategy(config.addresses.clStrategy).setSwapRoute(config.swapAdapter);
+        }
 
         for (uint256 i; i < config.approvedDexAdapters.length; ++i) {
             router.setAdapterApproval(config.approvedDexAdapters[i], true);
@@ -274,13 +279,24 @@ contract ConfigureRobinHarvest is Script {
         manager.setTargetFunctionRole(growthStrategy, selectors, manager.STRATEGY_MANAGER_ROLE());
     }
 
-    function _setLpSelectorRoles(AccessManager manager, address lpStrategy) internal {
-        bytes4[] memory selectors = new bytes4[](4);
-        selectors[0] = LpStrategy.setGauge.selector;
-        selectors[1] = LpStrategy.setMaxSlippage.selector;
-        selectors[2] = LpStrategy.pauseCompounding.selector;
-        selectors[3] = LpStrategy.resumeCompounding.selector;
-        manager.setTargetFunctionRole(lpStrategy, selectors, manager.STRATEGY_MANAGER_ROLE());
+    function _setConcentratedSelectorRoles(AccessManager manager, address clStrategy) internal {
+        bytes4[] memory selectors = new bytes4[](6);
+        selectors[0] = ConcentratedLiquidityStrategy.setPolicy.selector;
+        selectors[1] = ConcentratedLiquidityStrategy.setRiskParameters.selector;
+        selectors[2] = ConcentratedLiquidityStrategy.setAutoCompound.selector;
+        selectors[3] = ConcentratedLiquidityStrategy.setSwapRoute.selector;
+        selectors[4] = ConcentratedLiquidityStrategy.enterWithdrawOnly.selector;
+        selectors[5] = ConcentratedLiquidityStrategy.enterHarvestOnly.selector;
+        manager.setTargetFunctionRole(clStrategy, selectors, manager.STRATEGY_MANAGER_ROLE());
+
+        bytes4[] memory keeperSelectors = new bytes4[](1);
+        keeperSelectors[0] = ConcentratedLiquidityStrategy.rebalance.selector;
+        manager.setTargetFunctionRole(clStrategy, keeperSelectors, manager.KEEPER_ROLE());
+
+        bytes4[] memory securitySelectors = new bytes4[](2);
+        securitySelectors[0] = ConcentratedLiquidityStrategy.emergencyClosePositions.selector;
+        securitySelectors[1] = ConcentratedLiquidityStrategy.emergencyReturnAssetsToVault.selector;
+        manager.setTargetFunctionRole(clStrategy, securitySelectors, manager.SECURITY_COUNCIL_ROLE());
     }
 
     function _setRegistryAndRouterSelectorRoles(AccessManager manager, InitConfig memory config) internal {
@@ -331,9 +347,9 @@ contract ConfigureRobinHarvest is Script {
             growthVault: vm.envAddress("GROWTH_VAULT_ADDRESS"),
             growthStrategy: vm.envAddress("GROWTH_STRATEGY_ADDRESS"),
             growthAccountant: vm.envAddress("GROWTH_ACCOUNTANT_ADDRESS"),
-            lpVault: vm.envAddress("LP_VAULT_ADDRESS"),
-            lpStrategy: vm.envAddress("LP_STRATEGY_ADDRESS"),
-            lpAccountant: vm.envAddress("LP_ACCOUNTANT_ADDRESS")
+            clVault: vm.envAddress("CL_VAULT_ADDRESS"),
+            clStrategy: vm.envAddress("CL_STRATEGY_ADDRESS"),
+            clAccountant: vm.envAddress("CL_ACCOUNTANT_ADDRESS")
         });
         config.roles = RoleHolders({
             governance: vm.envAddress("GOVERNANCE_ADDRESS"),
@@ -354,6 +370,7 @@ contract ConfigureRobinHarvest is Script {
         config.oracles = _loadOracleEntries();
         config.rewards = _loadRewardEntries();
         config.routes = _loadRouteEntries();
+        config.swapAdapter = vm.envOr("SWAP_ADAPTER_ADDRESS", address(0));
     }
 
     function _loadOracleEntries() private view returns (OracleEntry[] memory entries) {

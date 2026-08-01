@@ -5,13 +5,13 @@
 | Dimension | Status | Notes |
 |---|---|---|
 | **Architecture** | ✅ Implemented | One vault/strategy; clear boundaries |
-| **Security** | ⚠️ Pre-audit | Slither + tests; external audit pending |
-| **Documentation** | ✅ Good | README, DESIGN, DEPLOYMENT, handbook |
-| **Testing** | ✅ Strong | Unit + integration + invariant + fuzz |
+| **Security** | 🟡 Hardening review | TWAP and Permit2 decisions complete; Slither findings and coverage need closure |
+| **Documentation** | ✅ Good | README, DESIGN, DEPLOYMENT, handbook, invariant and audit records |
+| **Testing** | ✅ Strong | 142 local tests plus four deployed-V4 fork scenarios |
 | **Maintainability** | ✅ Good | Modular registries, abstract strategy |
 | **Operational readiness** | ⚠️ Partial | Scripts exist; mainnet params open |
-| **Deployment readiness** | ❌ Blocked | Audit + official addresses |
-| **Audit readiness** | ✅ Scope defined | Feature complete for review |
+| **Deployment readiness** | ❌ Blocked | Coverage, findings, production parameters, and audit |
+| **Audit readiness** | 🟡 Package prepared | External auditor and remaining gates pending |
 
 ---
 
@@ -49,7 +49,7 @@ From README and code comments:
 |---|---|
 | LP strategy | LP type confirmation |
 | Dedicated rebalance algorithm | Phase 13 policy-only hooks |
-| Mainnet fork tests | Official RPC + block |
+| Production fork tests | Production vault/oracle/router/adapter addresses |
 | External audit + remediation | Audit firm |
 | CREATE2 deterministic deploy | Governance decision |
 | Upgradeable contracts | Not in V1 scope |
@@ -63,7 +63,8 @@ From README and code comments:
 - [ ] Production DEX routes
 - [ ] Governance multisig
 - [ ] Timelock configuration
-- [ ] Mainnet fork tests
+- [x] Robinhood Chain V4 fork tests
+- [ ] Static-analysis findings and coverage gate
 - [ ] External audit
 - [ ] Audit remediation
 
@@ -74,8 +75,8 @@ From README and code comments:
 ```
 IMPLEMENTED     → Code in src/, tests pass
 DOCUMENTED      → DESIGN, DEPLOYMENT, handbook, OPEN_QUESTIONS
-PLANNED         → LP strategy, rebalance algo, fork tests
-BLOCKED         → Production enablement until audit + external config
+COMPLETED       → CL fork scenarios against deployed V4 contracts
+BLOCKED         → Production enablement until coverage, findings, audit + external config
 ```
 
 ---

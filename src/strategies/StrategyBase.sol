@@ -61,7 +61,7 @@ abstract contract StrategyBase is IRobinStrategy, AccessManaged, ReentrancyGuard
         tokens = _rewardTokens;
     }
 
-    function deployFunds(uint256 amount) external override onlyVault {
+    function deployFunds(uint256 amount) external override onlyVault nonReentrant {
         if (lifecycleState != LifecycleState.Active) revert InvalidLifecycleState(uint8(lifecycleState));
         if (amount == 0) revert ZeroAmount();
         _deployFunds(amount);
@@ -69,7 +69,13 @@ abstract contract StrategyBase is IRobinStrategy, AccessManaged, ReentrancyGuard
         emit FundsDeployed(amount);
     }
 
-    function freeFunds(uint256 amount) external override onlyVault returns (uint256 amountFreed, uint256 loss) {
+    function freeFunds(uint256 amount)
+        external
+        override
+        onlyVault
+        nonReentrant
+        returns (uint256 amountFreed, uint256 loss)
+    {
         if (amount == 0) revert ZeroAmount();
         uint256 idleBefore = _asset.balanceOf(address(this));
         if (idleBefore < amount) {
@@ -145,11 +151,11 @@ abstract contract StrategyBase is IRobinStrategy, AccessManaged, ReentrancyGuard
         emit StrategyTended(msg.sender);
     }
 
-    function pause() external restricted {
+    function pause() public virtual restricted {
         _setLifecycleState(LifecycleState.Paused);
     }
 
-    function unpause() external restricted {
+    function unpause() public virtual restricted {
         if (lifecycleState == LifecycleState.Shutdown) revert InvalidLifecycleState(uint8(lifecycleState));
         _setLifecycleState(LifecycleState.Active);
     }
