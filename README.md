@@ -1,7 +1,7 @@
 # Robin Harvest Contracts
 
 ![Solidity](https://img.shields.io/badge/Solidity-0.8.25-blue)
-![Foundry](https://img.shields.io/badge/Foundry-v1.9.7-orange)
+![Foundry](https://img.shields.io/badge/Foundry-v1.3.1+-orange)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Version](https://img.shields.io/badge/Version-v0.1.0--alpha-purple)
 
@@ -182,15 +182,18 @@ Current implementation assumes:
 
 ## Toolchain & Tests
 
-- Foundry (Solidity `0.8.25`, EVM target `paris`)
+- Foundry (Solidity `0.8.25`, EVM target `cancun`)
 - OpenZeppelin Contracts `v5.6.1`
-- forge-std `v1.9.7`
+- forge-std `v1.16.2` (pinned in `foundry.lock`)
+- Uniswap v4 core & periphery (pinned via Git submodules in `foundry.lock`)
 
 Current repository test suite includes:
 - Unit tests
 - Integration tests
 - Stateful invariant tests
 - Fuzz tests
+
+> ℹ️ **Note on Test Coverage & via-IR:** Because Uniswap v4 planning and tick math require solc `--via-ir` compilation, automated line coverage generation (`forge coverage`) exceeds Yul optimizer stack limits on large strategy contracts. Verification assurance relies on comprehensive unit, fork, gas, and stateful invariant suites (see [docs/STATIC_ANALYSIS.md](./docs/STATIC_ANALYSIS.md)).
 
 ## Commands
 

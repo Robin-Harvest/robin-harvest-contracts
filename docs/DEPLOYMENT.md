@@ -8,8 +8,10 @@
 2. Install dependencies:
 
 ```sh
-forge install OpenZeppelin/openzeppelin-contracts@v5.6.1 --no-commit
-forge install foundry-rs/forge-std@v1.9.7 --no-commit
+forge install OpenZeppelin/openzeppelin-contracts@v5.6.1
+forge install foundry-rs/forge-std@v1.16.2
+forge install Uniswap/v4-core
+forge install Uniswap/v4-periphery
 ```
 
 3. Confirm all items in [OPEN_QUESTIONS.md](../OPEN_QUESTIONS.md) relevant to your launch scope.
