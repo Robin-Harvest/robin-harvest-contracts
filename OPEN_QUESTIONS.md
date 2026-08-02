@@ -5,9 +5,9 @@ Phase 1 assumes no external ABI, address, route, feed, role holder, parameter, o
 ## Network
 
 - What are the official Robinhood Chain chain ID, RPC endpoints, explorer URL, and explorer API?
-- Which EVM hard fork and opcode set are supported? Is temporary `paris` targeting correct?
+- **EVM Hard Fork & Opcodes**: Uniswap v4 concentrated liquidity strategies require transient storage opcodes (`tload`/`tstore`), requiring an EVM target of **Cancun** or later. Does the target Robinhood Chain production release natively support Cancun opcodes?
 - What are expected block time, finality, reorganization, gas, and contract-size constraints?
-- Is a public testnet available, and what faucet and canonical wrapped-native-token addresses are official?
+- **Testnet & Mocks**: Until live testnet faucets, canonical wrapped tokens, and Index Finance Core addresses are officially published, deployment validation relies on local simulation and mock suites via `script/DeployMocks.s.sol`.
 
 ## Index Finance
 

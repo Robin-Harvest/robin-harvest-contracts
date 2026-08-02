@@ -5,14 +5,14 @@ All notable changes to the Robin Harvest protocol will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] (rhINDEX-LP Strategy Release)
+## [Unreleased] (Uniswap v4 Concentrated Liquidity Strategy Release)
 
 ### Added
-- **rhINDEX-LP Strategy (`LpStrategy.sol`)**: Full automated DEX Liquidity Provisioning, Gauge staking, and yield auto-compounding strategy.
-- **Optimal Single-Sided Swap Calculation**: Constant-product invariant ratio calculation (`_optimalSwapAmount`) in `LpStrategy` to swap only the exact required amount of INDEX before depositing into DEX pools.
-- **Mark-to-Market LP Valuation**: Real-time pool reserve valuation via `OracleRegistry` and `totalPoolIndexValue` in `LpStrategy.deployedAssets()`.
-- **Stateful LP Invariant Test Suite (`RobinHarvestLpInvariantTest.t.sol`)**: Invariant fuzz suite verifying non-negative total assets, LP accounting conservation, zero stranded rewards, and NAV-bounded withdrawals.
-- **Governance Controls**: Added `setGauge()`, `setMaxSlippage()`, `pauseCompounding()`, and `resumeCompounding()` in `LpStrategy`.
+- **Concentrated Liquidity Strategy (`ConcentratedLiquidityStrategy.sol`)**: Full automated Uniswap v4 Concentrated Liquidity provisioning, active NFT position management, and yield auto-compounding strategy.
+- **Dynamic Range Rebalancing (`StaticRangeRebalancePolicy.sol`)**: Bounded tick alignment and position re-minting mechanics (`rebalance`, `invest`, `harvest`) managed via dedicated keeper controls.
+- **Mark-to-Market LP Valuation**: Real-time position liquidity and fee reserve valuation via `OracleRegistry` and observation TWAP price validation in `deployedAssets()`.
+- **Stateful Invariant Suite (`RobinHarvestLpInvariantTest.t.sol` & `ConcentratedLiquidityStrategy.t.sol`)**: Comprehensive testing suite verifying asset conservation, slippage bounds, zero stranded rewards, and EIP-170 code size compliance.
+- **Governance & Policy Controls**: Added rebalance policy parameters, maximum slippage bounds, and emergency pause/shutdown mechanics in `ConcentratedLiquidityStrategy`.
 
 ## [v1.2 Pre-Audit]
 
