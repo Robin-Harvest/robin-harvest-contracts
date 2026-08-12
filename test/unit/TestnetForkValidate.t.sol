@@ -18,6 +18,11 @@ contract TestnetForkValidateTest is Test {
     ValidateTestnetForkHarness internal validator;
 
     function setUp() public {
+        address manager = vm.envOr("ACCESS_MANAGER_ADDRESS", address(0));
+        if (manager == address(0) || manager.code.length == 0) {
+            vm.skip(true, "live testnet contract bytecode not present; skipping live testnet fork validation");
+            return;
+        }
         validator = new ValidateTestnetForkHarness();
     }
 
