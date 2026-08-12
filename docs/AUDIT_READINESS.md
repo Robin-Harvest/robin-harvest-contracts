@@ -25,7 +25,8 @@ The security properties are enumerated in [INVARIANTS.md](./INVARIANTS.md).
 - [x] Static-analysis findings recorded with dispositions
 - [ ] Coverage instrumentation produces a valid report
 - [ ] Static-analysis findings accepted or remediated by security review
-- [ ] Deployment addresses, oracle feeds, routes, governance, and timelocks finalized
+- [x] ExecutionRouter fails closed when oracle feeds are unhealthy (OracleUnavailable)
+- [ ] Index Finance production ABI verified (`INDEX_FINANCE_INTEGRATION_VERIFIED=true`)
 - [ ] External auditor engaged and audit window opened
 
 No external audit has been started from this workspace. Until the unchecked gates

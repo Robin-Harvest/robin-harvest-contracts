@@ -70,6 +70,7 @@ contract ConfigureRobinHarvest is Script {
     struct InitConfig {
         Addresses addresses;
         RoleHolders roles;
+        TimelockConfig timelocks;
         address feeRecipient;
         uint256 eligibilityThreshold;
         uint256 strategyMigrationDelay;
@@ -79,6 +80,15 @@ contract ConfigureRobinHarvest is Script {
         RewardEntry[] rewards;
         RouteEntry[] routes;
         address swapAdapter;
+        bool indexFinanceIntegrationVerified;
+        address indexFinanceAddress;
+    }
+
+    struct TimelockConfig {
+        /// @notice Delay before newly granted operational role holders may execute privileged actions.
+        uint32 operationalRoleExecutionDelay;
+        /// @notice Minimum scheduling delay for high-impact configuration selectors.
+        uint32 configFunctionDelay;
     }
 
     error LengthMismatch(bytes32 listName);
@@ -97,19 +107,15 @@ contract ConfigureRobinHarvest is Script {
         _validateBaseConfig(config);
         AccessManager manager = AccessManager(config.addresses.manager);
 
-        _ensureRole(manager, manager.GOVERNANCE_ROLE(), config.roles.governance);
-        _ensureRole(manager, manager.SECURITY_COUNCIL_ROLE(), config.roles.governance);
-        _ensureRole(manager, manager.STRATEGY_MANAGER_ROLE(), config.roles.governance);
-        _ensureRole(manager, manager.KEEPER_ROLE(), config.roles.governance);
-        _ensureRole(manager, manager.ORACLE_MANAGER_ROLE(), config.roles.governance);
-        _ensureRole(manager, manager.REWARD_MANAGER_ROLE(), config.roles.governance);
-        _ensureRole(manager, manager.SECURITY_COUNCIL_ROLE(), config.roles.securityCouncil);
-        _ensureRole(manager, manager.STRATEGY_MANAGER_ROLE(), config.roles.strategyManager);
-        _ensureRole(manager, manager.KEEPER_ROLE(), config.roles.keeper);
-        _ensureRole(manager, manager.ORACLE_MANAGER_ROLE(), config.roles.oracleManager);
-        _ensureRole(manager, manager.REWARD_MANAGER_ROLE(), config.roles.rewardManager);
+        _ensureRole(manager, manager.GOVERNANCE_ROLE(), config.roles.governance, 0);
+        _ensureRole(manager, manager.SECURITY_COUNCIL_ROLE(), config.roles.governance, 0);
+        _ensureRole(manager, manager.STRATEGY_MANAGER_ROLE(), config.roles.governance, 0);
+        _ensureRole(manager, manager.KEEPER_ROLE(), config.roles.governance, 0);
+        _ensureRole(manager, manager.ORACLE_MANAGER_ROLE(), config.roles.governance, 0);
+        _ensureRole(manager, manager.REWARD_MANAGER_ROLE(), config.roles.governance, 0);
+        _ensureRole(manager, manager.SECURITY_COUNCIL_ROLE(), config.roles.securityCouncil, 0);
+        _ensureRole(manager, manager.KEEPER_ROLE(), config.roles.keeper, 0);
 
-        _configureSelectorRoles(config, manager);
         _configureVault(
             config.addresses.coreVault,
             config.addresses.coreStrategy,
@@ -139,6 +145,44 @@ contract ConfigureRobinHarvest is Script {
         );
 
         _configureExternalPolicies(config);
+
+        _configureSelectorRoles(config, manager);
+        _configureFunctionDelays(config, manager);
+
+        _ensureRole(
+            manager,
+            manager.STRATEGY_MANAGER_ROLE(),
+            config.roles.strategyManager,
+            config.timelocks.operationalRoleExecutionDelay
+        );
+        _ensureRole(
+            manager,
+            manager.ORACLE_MANAGER_ROLE(),
+            config.roles.oracleManager,
+            config.timelocks.operationalRoleExecutionDelay
+        );
+        _ensureRole(
+            manager,
+            manager.REWARD_MANAGER_ROLE(),
+            config.roles.rewardManager,
+            config.timelocks.operationalRoleExecutionDelay
+        );
+    }
+
+    /// @dev Sync guard: these 9 targets must match ValidateRobinHarvest._requireTimelockPolicy exactly.
+    function _configureFunctionDelays(InitConfig memory config, AccessManager manager) internal {
+        uint32 delay = config.timelocks.configFunctionDelay;
+        if (delay == 0) return;
+
+        manager.setTargetAdminDelay(config.addresses.coreVault, delay);
+        manager.setTargetAdminDelay(config.addresses.growthVault, delay);
+        manager.setTargetAdminDelay(config.addresses.clVault, delay);
+        manager.setTargetAdminDelay(config.addresses.coreStrategy, delay);
+        manager.setTargetAdminDelay(config.addresses.growthStrategy, delay);
+        manager.setTargetAdminDelay(config.addresses.clStrategy, delay);
+        manager.setTargetAdminDelay(config.addresses.oracleRegistry, delay);
+        manager.setTargetAdminDelay(config.addresses.rewardRegistry, delay);
+        manager.setTargetAdminDelay(config.addresses.router, delay);
     }
 
     function _configureSelectorRoles(InitConfig memory config, AccessManager manager) internal {
@@ -213,9 +257,11 @@ contract ConfigureRobinHarvest is Script {
         }
     }
 
-    function _ensureRole(AccessManager manager, uint64 role, address account) internal {
-        (bool hasRole,) = manager.hasRole(role, account);
-        if (!hasRole) manager.grantRole(role, account, 0);
+    function _ensureRole(AccessManager manager, uint64 role, address account, uint32 executionDelay) internal {
+        (bool hasRole, uint32 currentDelay) = manager.hasRole(role, account);
+        if (!hasRole || currentDelay != executionDelay) {
+            manager.grantRole(role, account, executionDelay);
+        }
     }
 
     function _setVaultSelectorRoles(AccessManager manager, address vault) internal {
@@ -371,6 +417,12 @@ contract ConfigureRobinHarvest is Script {
         config.rewards = _loadRewardEntries();
         config.routes = _loadRouteEntries();
         config.swapAdapter = vm.envOr("SWAP_ADAPTER_ADDRESS", address(0));
+        config.timelocks = TimelockConfig({
+            operationalRoleExecutionDelay: uint32(vm.envOr("OPERATIONAL_ROLE_EXECUTION_DELAY", uint256(0))),
+            configFunctionDelay: uint32(vm.envOr("CONFIG_FUNCTION_DELAY", uint256(0)))
+        });
+        config.indexFinanceIntegrationVerified = vm.envOr("INDEX_FINANCE_INTEGRATION_VERIFIED", false);
+        config.indexFinanceAddress = vm.envOr("INDEX_FINANCE_ADDRESS", address(0));
     }
 
     function _loadOracleEntries() private view returns (OracleEntry[] memory entries) {

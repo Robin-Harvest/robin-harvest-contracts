@@ -64,6 +64,10 @@ error StaleOracle(address oracle, uint256 updatedAt, uint256 heartbeat);
 /// @param maxDeviationBps Maximum permitted deviation in basis points.
 error OracleDeviationExceeded(uint256 deviationBps, uint256 maxDeviationBps);
 
+/// @notice Thrown when a swap route requires oracle validation but the feed is unavailable.
+/// @param token Asset whose oracle is missing, paused, stale, or returned an invalid price.
+error OracleUnavailable(address token);
+
 /// @notice Thrown when an exposure cap would be exceeded.
 /// @param subject Token or encoded category identifier subject to the cap.
 /// @param exposureBps Resulting exposure in basis points.

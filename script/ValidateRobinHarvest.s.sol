@@ -28,6 +28,10 @@ contract ValidateRobinHarvest is Script, ConfigureRobinHarvest {
     error RewardConfigMismatch(address token);
     error AdapterNotApproved(address adapter);
     error RouteConfigMismatch(address adapter, address tokenIn, address tokenOut);
+    error ProvisionalIndexFinanceIntegration();
+    error TimelockNotConfigured(bytes4 selector, uint32 expectedDelay, uint32 actualDelay);
+    error RoleExecutionDelayMismatch(uint64 role, address account, uint32 expectedDelay, uint32 actualDelay);
+    error CriticalSelectorMustBeImmediate(address caller, address target, bytes4 selector);
 
     function run() external view override {
         _validate(_loadConfig());
@@ -43,6 +47,84 @@ contract ValidateRobinHarvest is Script, ConfigureRobinHarvest {
         _requireSelectorRoles(config, manager);
         _requireVaultWiring(config);
         _requireExternalPolicy(config);
+        _requireProductionIntegration(config);
+        _requireTimelockPolicy(config, manager);
+    }
+
+    function _requireProductionIntegration(InitConfig memory config) private view {
+        if (config.indexFinanceIntegrationVerified) return;
+        if (config.indexFinanceAddress == address(0)) return;
+        revert ProvisionalIndexFinanceIntegration();
+    }
+
+    function _requireTimelockPolicy(InitConfig memory config, AccessManager manager) private view {
+        if (config.timelocks.operationalRoleExecutionDelay > 0) {
+            _requireRoleExecutionDelay(
+                manager,
+                manager.STRATEGY_MANAGER_ROLE(),
+                config.roles.strategyManager,
+                config.timelocks.operationalRoleExecutionDelay
+            );
+            _requireRoleExecutionDelay(
+                manager,
+                manager.ORACLE_MANAGER_ROLE(),
+                config.roles.oracleManager,
+                config.timelocks.operationalRoleExecutionDelay
+            );
+            _requireRoleExecutionDelay(
+                manager,
+                manager.REWARD_MANAGER_ROLE(),
+                config.roles.rewardManager,
+                config.timelocks.operationalRoleExecutionDelay
+            );
+            _requireRoleExecutionDelay(manager, manager.KEEPER_ROLE(), config.roles.keeper, 0);
+        }
+
+        if (config.timelocks.configFunctionDelay == 0) {
+            _requireImmediateCall(
+                manager, config.roles.securityCouncil, config.addresses.coreVault, RobinVault.pause.selector
+            );
+            _requireImmediateCall(
+                manager, config.roles.keeper, config.addresses.coreStrategy, StrategyBase.harvest.selector
+            );
+            return;
+        }
+
+        // Sync guard: these 9 targets must match ConfigureRobinHarvest._configureFunctionDelays exactly.
+        _requireTargetAdminDelay(
+            manager, config.addresses.coreVault, config.timelocks.configFunctionDelay
+        );
+        _requireTargetAdminDelay(
+            manager, config.addresses.growthVault, config.timelocks.configFunctionDelay
+        );
+        _requireTargetAdminDelay(
+            manager, config.addresses.clVault, config.timelocks.configFunctionDelay
+        );
+        _requireTargetAdminDelay(
+            manager, config.addresses.coreStrategy, config.timelocks.configFunctionDelay
+        );
+        _requireTargetAdminDelay(
+            manager, config.addresses.growthStrategy, config.timelocks.configFunctionDelay
+        );
+        _requireTargetAdminDelay(
+            manager, config.addresses.clStrategy, config.timelocks.configFunctionDelay
+        );
+        _requireTargetAdminDelay(
+            manager, config.addresses.oracleRegistry, config.timelocks.configFunctionDelay
+        );
+        _requireTargetAdminDelay(
+            manager, config.addresses.rewardRegistry, config.timelocks.configFunctionDelay
+        );
+        _requireTargetAdminDelay(
+            manager, config.addresses.router, config.timelocks.configFunctionDelay
+        );
+
+        _requireImmediateCall(
+            manager, config.roles.securityCouncil, config.addresses.coreVault, RobinVault.pause.selector
+        );
+        _requireImmediateCall(
+            manager, config.roles.keeper, config.addresses.coreStrategy, StrategyBase.harvest.selector
+        );
     }
 
     function _requireAuthorities(InitConfig memory config) private view {
@@ -76,99 +158,141 @@ contract ValidateRobinHarvest is Script, ConfigureRobinHarvest {
     }
 
     function _requireSelectorRoles(InitConfig memory config, AccessManager manager) private view {
-        _canCall(manager, config.roles.strategyManager, config.addresses.coreVault, RobinVault.setStrategy.selector);
-        _canCall(manager, config.roles.strategyManager, config.addresses.growthVault, RobinVault.setStrategy.selector);
-        _canCall(manager, config.roles.strategyManager, config.addresses.clVault, RobinVault.setStrategy.selector);
-        _canCall(manager, config.roles.keeper, config.addresses.coreVault, RobinVault.deploy.selector);
-        _canCall(manager, config.roles.keeper, config.addresses.growthVault, RobinVault.deploy.selector);
-        _canCall(manager, config.roles.keeper, config.addresses.clVault, RobinVault.deploy.selector);
-        _canCall(manager, config.roles.securityCouncil, config.addresses.coreVault, RobinVault.pause.selector);
-        _canCall(manager, config.roles.securityCouncil, config.addresses.growthVault, RobinVault.pause.selector);
-        _canCall(manager, config.roles.securityCouncil, config.addresses.clVault, RobinVault.pause.selector);
+        bool configDelayed = config.timelocks.configFunctionDelay > 0;
+        bool operationalDelayed = config.timelocks.operationalRoleExecutionDelay > 0;
+        bool strategyManagerDelayed = configDelayed || operationalDelayed;
+        _requireAuthorizedCall(
+            manager, config.roles.strategyManager, config.addresses.coreVault, RobinVault.setStrategy.selector, strategyManagerDelayed
+        );
+        _requireAuthorizedCall(
+            manager, config.roles.strategyManager, config.addresses.growthVault, RobinVault.setStrategy.selector, strategyManagerDelayed
+        );
+        _requireAuthorizedCall(
+            manager, config.roles.strategyManager, config.addresses.clVault, RobinVault.setStrategy.selector, strategyManagerDelayed
+        );
+        _requireAuthorizedCall(manager, config.roles.keeper, config.addresses.coreVault, RobinVault.deploy.selector, false);
+        _requireAuthorizedCall(manager, config.roles.keeper, config.addresses.growthVault, RobinVault.deploy.selector, false);
+        _requireAuthorizedCall(manager, config.roles.keeper, config.addresses.clVault, RobinVault.deploy.selector, false);
+        _requireAuthorizedCall(
+            manager, config.roles.securityCouncil, config.addresses.coreVault, RobinVault.pause.selector, false
+        );
+        _requireAuthorizedCall(
+            manager, config.roles.securityCouncil, config.addresses.growthVault, RobinVault.pause.selector, false
+        );
+        _requireAuthorizedCall(
+            manager, config.roles.securityCouncil, config.addresses.clVault, RobinVault.pause.selector, false
+        );
 
-        _canCall(manager, config.roles.keeper, config.addresses.coreStrategy, StrategyBase.harvest.selector);
-        _canCall(manager, config.roles.keeper, config.addresses.growthStrategy, StrategyBase.harvest.selector);
-        _canCall(manager, config.roles.keeper, config.addresses.clStrategy, StrategyBase.harvest.selector);
-        _canCall(
-            manager, config.roles.rewardManager, config.addresses.coreStrategy, StrategyBase.addRewardToken.selector
+        _requireAuthorizedCall(
+            manager, config.roles.keeper, config.addresses.coreStrategy, StrategyBase.harvest.selector, false
         );
-        _canCall(
-            manager, config.roles.rewardManager, config.addresses.growthStrategy, StrategyBase.addRewardToken.selector
+        _requireAuthorizedCall(
+            manager, config.roles.keeper, config.addresses.growthStrategy, StrategyBase.harvest.selector, false
         );
-        _canCall(manager, config.roles.securityCouncil, config.addresses.coreStrategy, StrategyBase.pause.selector);
-        _canCall(manager, config.roles.securityCouncil, config.addresses.growthStrategy, StrategyBase.pause.selector);
-        _canCall(manager, config.roles.securityCouncil, config.addresses.clStrategy, StrategyBase.pause.selector);
-        _canCall(
+        _requireAuthorizedCall(
+            manager, config.roles.keeper, config.addresses.clStrategy, StrategyBase.harvest.selector, false
+        );
+        bool rewardManagerDelayed = configDelayed || operationalDelayed;
+        bool oracleManagerDelayed = configDelayed || operationalDelayed;
+        _requireAuthorizedCall(
+            manager, config.roles.rewardManager, config.addresses.coreStrategy, StrategyBase.addRewardToken.selector, rewardManagerDelayed
+        );
+        _requireAuthorizedCall(
+            manager, config.roles.rewardManager, config.addresses.growthStrategy, StrategyBase.addRewardToken.selector, rewardManagerDelayed
+        );
+        _requireAuthorizedCall(
+            manager, config.roles.securityCouncil, config.addresses.coreStrategy, StrategyBase.pause.selector, false
+        );
+        _requireAuthorizedCall(
+            manager, config.roles.securityCouncil, config.addresses.growthStrategy, StrategyBase.pause.selector, false
+        );
+        _requireAuthorizedCall(
+            manager, config.roles.securityCouncil, config.addresses.clStrategy, StrategyBase.pause.selector, false
+        );
+        _requireAuthorizedCall(
             manager,
             config.roles.strategyManager,
             config.addresses.growthStrategy,
-            GrowthStrategy.setNavHaircutBps.selector
+            GrowthStrategy.setNavHaircutBps.selector,
+            strategyManagerDelayed
         );
-        _canCall(
+        _requireAuthorizedCall(
             manager,
             config.roles.strategyManager,
             config.addresses.clStrategy,
-            ConcentratedLiquidityStrategy.setPolicy.selector
+            ConcentratedLiquidityStrategy.setPolicy.selector,
+            strategyManagerDelayed
         );
-        _canCall(
+        _requireAuthorizedCall(
             manager,
             config.roles.strategyManager,
             config.addresses.clStrategy,
-            ConcentratedLiquidityStrategy.setRiskParameters.selector
+            ConcentratedLiquidityStrategy.setRiskParameters.selector,
+            strategyManagerDelayed
         );
-        _canCall(
+        _requireAuthorizedCall(
             manager,
             config.roles.strategyManager,
             config.addresses.clStrategy,
-            ConcentratedLiquidityStrategy.setAutoCompound.selector
+            ConcentratedLiquidityStrategy.setAutoCompound.selector,
+            strategyManagerDelayed
         );
-        _canCall(
+        _requireAuthorizedCall(
             manager,
             config.roles.strategyManager,
             config.addresses.clStrategy,
-            ConcentratedLiquidityStrategy.setSwapRoute.selector
+            ConcentratedLiquidityStrategy.setSwapRoute.selector,
+            strategyManagerDelayed
         );
-        _canCall(
+        _requireAuthorizedCall(
             manager,
             config.roles.strategyManager,
             config.addresses.clStrategy,
-            ConcentratedLiquidityStrategy.enterWithdrawOnly.selector
+            ConcentratedLiquidityStrategy.enterWithdrawOnly.selector,
+            strategyManagerDelayed
         );
-        _canCall(
+        _requireAuthorizedCall(
             manager,
             config.roles.strategyManager,
             config.addresses.clStrategy,
-            ConcentratedLiquidityStrategy.enterHarvestOnly.selector
+            ConcentratedLiquidityStrategy.enterHarvestOnly.selector,
+            strategyManagerDelayed
         );
-        _canCall(
-            manager, config.roles.keeper, config.addresses.clStrategy, ConcentratedLiquidityStrategy.rebalance.selector
+        _requireAuthorizedCall(
+            manager, config.roles.keeper, config.addresses.clStrategy, ConcentratedLiquidityStrategy.rebalance.selector, false
         );
-        _canCall(
+        _requireAuthorizedCall(
             manager,
             config.roles.securityCouncil,
             config.addresses.clStrategy,
-            ConcentratedLiquidityStrategy.emergencyClosePositions.selector
+            ConcentratedLiquidityStrategy.emergencyClosePositions.selector,
+            false
         );
-        _canCall(
+        _requireAuthorizedCall(
             manager,
             config.roles.securityCouncil,
             config.addresses.clStrategy,
-            ConcentratedLiquidityStrategy.emergencyReturnAssetsToVault.selector
+            ConcentratedLiquidityStrategy.emergencyReturnAssetsToVault.selector,
+            false
         );
 
-        _canCall(
+        _requireAuthorizedCall(
             manager,
             config.roles.oracleManager,
             config.addresses.oracleRegistry,
-            OracleRegistry.setOracleConfig.selector
+            OracleRegistry.setOracleConfig.selector,
+            oracleManagerDelayed
         );
-        _canCall(
+        _requireAuthorizedCall(
             manager,
             config.roles.rewardManager,
             config.addresses.rewardRegistry,
-            RewardRegistry.setRewardTokenConfig.selector
+            RewardRegistry.setRewardTokenConfig.selector,
+            rewardManagerDelayed
         );
-        _canCall(manager, config.roles.strategyManager, config.addresses.router, ExecutionRouter.setRoute.selector);
+        _requireAuthorizedCall(
+            manager, config.roles.strategyManager, config.addresses.router, ExecutionRouter.setRoute.selector, strategyManagerDelayed
+        );
     }
 
     function _requireVaultWiring(InitConfig memory config) private view {
@@ -290,8 +414,36 @@ contract ValidateRobinHarvest is Script, ConfigureRobinHarvest {
         if (!hasRole) revert RoleMissing(role, account);
     }
 
-    function _canCall(AccessManager manager, address caller, address target, bytes4 selector) private view {
+    function _requireAuthorizedCall(
+        AccessManager manager,
+        address caller,
+        address target,
+        bytes4 selector,
+        bool allowDelayed
+    ) private view {
+        (bool immediate, uint32 delay) = manager.canCall(caller, target, selector);
+        if (immediate) return;
+        if (allowDelayed && delay > 0) return;
+        revert SelectorUnauthorized(caller, target, selector);
+    }
+
+    function _requireImmediateCall(AccessManager manager, address caller, address target, bytes4 selector) private view {
         (bool immediate,) = manager.canCall(caller, target, selector);
-        if (!immediate) revert SelectorUnauthorized(caller, target, selector);
+        if (!immediate) revert CriticalSelectorMustBeImmediate(caller, target, selector);
+    }
+
+    function _requireTargetAdminDelay(AccessManager manager, address target, uint32 expectedDelay) private view {
+        uint32 delay = manager.getTargetAdminDelay(target);
+        if (delay < expectedDelay) revert TimelockNotConfigured(bytes4(0), expectedDelay, delay);
+    }
+
+    function _requireRoleExecutionDelay(
+        AccessManager manager,
+        uint64 role,
+        address account,
+        uint32 expectedDelay
+    ) private view {
+        (, uint32 delay) = manager.hasRole(role, account);
+        if (delay != expectedDelay) revert RoleExecutionDelayMismatch(role, account, expectedDelay, delay);
     }
 }

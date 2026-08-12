@@ -24,9 +24,9 @@ The meaningful findings were addressed as follows:
 - V4 and Permit2 amount fields are now checked before narrowing to `uint128` or
   `uint160`; oversized balances revert with `V4AmountOverflow`.
 - Position set mutations now check the `EnumerableSet` return values.
-- Swap return values are checked defensively against `minOut`.
+- ExecutionRouter now reverts with `OracleUnavailable` when route oracle validation is required but either feed is unhealthy, missing, or zero-priced.
 - Future oracle timestamps are treated as unhealthy at the strategy boundary.
-- Active positions are capped at `MAX_ACTIVE_POSITIONS = 16`, bounding accounting,
+- Active positions are capped at `MAX_ACTIVE_POSITIONS = 1`, bounding accounting,
   harvest, withdrawal, rebalance, and emergency loops.
 - Permit2 discovery now uses the official PositionManager `permit2()` getter rather
   than a low-level compatibility call.

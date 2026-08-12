@@ -15,6 +15,7 @@ import {
     InvalidBasisPoints,
     NotApproved,
     OracleDeviationExceeded,
+    OracleUnavailable,
     ZeroAddress,
     ZeroAmount
 } from "../libraries/Errors.sol";
@@ -137,24 +138,27 @@ contract ExecutionRouter is IExecutionRouter, AccessManaged, ReentrancyGuard, Ev
         routeId = keccak256(abi.encode(adapter, tokenIn, tokenOut));
     }
 
+    /// @dev Routes with oracle deviation limits require healthy feeds on both sides. Unhealthy feeds revert
+    ///      rather than allowing oracle-less execution protected only by caller slippage bounds.
     function _enforceOracleDeviation(SwapRequest calldata request, uint256 amountOut, uint16 maxDeviationBps)
         private
         view
     {
         if (maxDeviationBps == 0) return;
 
-        // Justification: tryGetValidatedPrice handles paused/stale feeds gracefully without reverting.
         // slither-disable-next-line unused-return
         (bool healthyIn, uint256 priceIn,) = oracleRegistry.tryGetValidatedPrice(request.tokenIn);
         // slither-disable-next-line unused-return
         (bool healthyOut, uint256 priceOut,) = oracleRegistry.tryGetValidatedPrice(request.tokenOut);
-        if (!healthyIn || !healthyOut || priceOut == 0) return;
+        if (!healthyIn) revert OracleUnavailable(request.tokenIn);
+        if (!healthyOut) revert OracleUnavailable(request.tokenOut);
+        if (priceIn == 0 || priceOut == 0) revert OracleUnavailable(priceOut == 0 ? request.tokenOut : request.tokenIn);
 
         uint8 decimalsIn = IERC20Metadata(request.tokenIn).decimals();
         uint8 decimalsOut = IERC20Metadata(request.tokenOut).decimals();
 
         uint256 expectedOut = request.amountIn.mulDiv(priceIn, priceOut).mulDiv(10 ** decimalsOut, 10 ** decimalsIn);
-        if (expectedOut == 0) return;
+        if (expectedOut == 0) revert OracleUnavailable(request.tokenOut);
 
         uint256 deviation = amountOut > expectedOut ? amountOut - expectedOut : expectedOut - amountOut;
         uint256 deviationBps = deviation.mulDiv(Constants.BPS, expectedOut, Math.Rounding.Ceil);
