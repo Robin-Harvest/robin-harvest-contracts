@@ -156,10 +156,8 @@ contract DeploymentFlowTest is Test {
     function testProductionTimelockDelaysConfigured() public {
         DeployRobinHarvest.DeploymentAddresses memory deployed = _deploy(address(configureHarness));
         ConfigureRobinHarvest.InitConfig memory config = _initConfig(deployed);
-        config.timelocks = ConfigureRobinHarvest.TimelockConfig({
-            operationalRoleExecutionDelay: 1 days,
-            configFunctionDelay: 2 days
-        });
+        config.timelocks =
+            ConfigureRobinHarvest.TimelockConfig({operationalRoleExecutionDelay: 1 days, configFunctionDelay: 2 days});
         configureHarness.configurePublic(config);
         config.indexFinanceIntegrationVerified = true;
 
@@ -193,10 +191,8 @@ contract DeploymentFlowTest is Test {
     function testValidationFailsWhenOperationalRoleDelayMissing() public {
         DeployRobinHarvest.DeploymentAddresses memory deployed = _deploy(address(configureHarness));
         ConfigureRobinHarvest.InitConfig memory config = _initConfig(deployed);
-        config.timelocks = ConfigureRobinHarvest.TimelockConfig({
-            operationalRoleExecutionDelay: 1 days,
-            configFunctionDelay: 2 days
-        });
+        config.timelocks =
+            ConfigureRobinHarvest.TimelockConfig({operationalRoleExecutionDelay: 1 days, configFunctionDelay: 2 days});
         configureHarness.configurePublic(config);
         config.indexFinanceIntegrationVerified = true;
 
@@ -217,10 +213,8 @@ contract DeploymentFlowTest is Test {
     function testEmergencySelectorsRemainImmediateUnderTimelockPolicy() public {
         DeployRobinHarvest.DeploymentAddresses memory deployed = _deploy(address(configureHarness));
         ConfigureRobinHarvest.InitConfig memory config = _initConfig(deployed);
-        config.timelocks = ConfigureRobinHarvest.TimelockConfig({
-            operationalRoleExecutionDelay: 1 days,
-            configFunctionDelay: 2 days
-        });
+        config.timelocks =
+            ConfigureRobinHarvest.TimelockConfig({operationalRoleExecutionDelay: 1 days, configFunctionDelay: 2 days});
         configureHarness.configurePublic(config);
         config.indexFinanceIntegrationVerified = true;
 
@@ -342,10 +336,7 @@ contract DeploymentFlowTest is Test {
                 rewardManager: rewardManager,
                 securityCouncil: securityCouncil
             }),
-            timelocks: ConfigureRobinHarvest.TimelockConfig({
-                operationalRoleExecutionDelay: 0,
-                configFunctionDelay: 0
-            }),
+            timelocks: ConfigureRobinHarvest.TimelockConfig({operationalRoleExecutionDelay: 0, configFunctionDelay: 0}),
             feeRecipient: feeRecipient,
             eligibilityThreshold: 10_000 ether,
             strategyMigrationDelay: 1 days,
