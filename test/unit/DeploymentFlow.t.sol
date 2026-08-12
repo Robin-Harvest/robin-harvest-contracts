@@ -141,6 +141,100 @@ contract DeploymentFlowTest is Test {
         validateHarness.validatePublic(config);
     }
 
+    function testValidationFailsForProvisionalIndexFinanceWithoutVerificationFlag() public {
+        DeployRobinHarvest.DeploymentAddresses memory deployed = _deploy(address(configureHarness));
+        ConfigureRobinHarvest.InitConfig memory config = _initConfig(deployed);
+        configureHarness.configurePublic(config);
+
+        config.indexFinanceIntegrationVerified = false;
+        config.indexFinanceAddress = address(indexFinance);
+
+        vm.expectRevert(ValidateRobinHarvest.ProvisionalIndexFinanceIntegration.selector);
+        validateHarness.validatePublic(config);
+    }
+
+    function testProductionTimelockDelaysConfigured() public {
+        DeployRobinHarvest.DeploymentAddresses memory deployed = _deploy(address(configureHarness));
+        ConfigureRobinHarvest.InitConfig memory config = _initConfig(deployed);
+        config.timelocks =
+            ConfigureRobinHarvest.TimelockConfig({operationalRoleExecutionDelay: 1 days, configFunctionDelay: 2 days});
+        configureHarness.configurePublic(config);
+        config.indexFinanceIntegrationVerified = true;
+
+        // OZ AccessManager.setTargetAdminDelay uses withUpdate(newDelay, minSetback()).
+        // minSetback() is 5 days, so admin delays are pending until then.
+        // Warp past setback so getTargetAdminDelay returns the configured value.
+        vm.warp(block.timestamp + 5 days);
+
+        validateHarness.validatePublic(config);
+
+        AccessManager manager = deployed.manager;
+        assertEq(manager.getTargetAdminDelay(address(deployed.coreVault)), 2 days);
+
+        (, uint32 strategyManagerDelay) = manager.hasRole(manager.STRATEGY_MANAGER_ROLE(), strategyManager);
+        (, uint32 oracleManagerDelay) = manager.hasRole(manager.ORACLE_MANAGER_ROLE(), oracleManager);
+        (, uint32 rewardManagerDelay) = manager.hasRole(manager.REWARD_MANAGER_ROLE(), rewardManager);
+        (, uint32 keeperDelay) = manager.hasRole(manager.KEEPER_ROLE(), keeper);
+        assertEq(strategyManagerDelay, 1 days);
+        assertEq(oracleManagerDelay, 1 days);
+        assertEq(rewardManagerDelay, 1 days);
+        assertEq(keeperDelay, 0);
+
+        (bool immediate,) = manager.canCall(keeper, address(deployed.coreStrategy), StrategyBase.harvest.selector);
+        assertTrue(immediate);
+
+        (bool strategyImmediate,) =
+            manager.canCall(strategyManager, address(deployed.coreVault), RobinVault.setStrategy.selector);
+        assertFalse(strategyImmediate);
+    }
+
+    function testValidationFailsWhenOperationalRoleDelayMissing() public {
+        DeployRobinHarvest.DeploymentAddresses memory deployed = _deploy(address(configureHarness));
+        ConfigureRobinHarvest.InitConfig memory config = _initConfig(deployed);
+        config.timelocks =
+            ConfigureRobinHarvest.TimelockConfig({operationalRoleExecutionDelay: 1 days, configFunctionDelay: 2 days});
+        configureHarness.configurePublic(config);
+        config.indexFinanceIntegrationVerified = true;
+
+        config.timelocks.operationalRoleExecutionDelay = 2 days;
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ValidateRobinHarvest.RoleExecutionDelayMismatch.selector,
+                deployed.manager.STRATEGY_MANAGER_ROLE(),
+                strategyManager,
+                uint32(2 days),
+                uint32(1 days)
+            )
+        );
+        validateHarness.validatePublic(config);
+    }
+
+    function testEmergencySelectorsRemainImmediateUnderTimelockPolicy() public {
+        DeployRobinHarvest.DeploymentAddresses memory deployed = _deploy(address(configureHarness));
+        ConfigureRobinHarvest.InitConfig memory config = _initConfig(deployed);
+        config.timelocks =
+            ConfigureRobinHarvest.TimelockConfig({operationalRoleExecutionDelay: 1 days, configFunctionDelay: 2 days});
+        configureHarness.configurePublic(config);
+        config.indexFinanceIntegrationVerified = true;
+
+        // Warp past OZ AccessManager minSetback (5 days) so admin delays take effect.
+        vm.warp(block.timestamp + 5 days);
+
+        validateHarness.validatePublic(config);
+
+        AccessManager manager = deployed.manager;
+        (bool councilCanPause,) =
+            manager.canCall(securityCouncil, address(deployed.coreVault), RobinVault.pause.selector);
+        (bool councilCanEmergencyClose,) = manager.canCall(
+            securityCouncil,
+            address(deployed.clStrategy),
+            ConcentratedLiquidityStrategy.emergencyClosePositions.selector
+        );
+        assertTrue(councilCanPause);
+        assertTrue(councilCanEmergencyClose);
+    }
+
     function _deploy(address governance) private returns (DeployRobinHarvest.DeploymentAddresses memory deployed) {
         deployed = deployHarness.deployPublic(
             DeployRobinHarvest.DeploymentConfig({
@@ -242,6 +336,7 @@ contract DeploymentFlowTest is Test {
                 rewardManager: rewardManager,
                 securityCouncil: securityCouncil
             }),
+            timelocks: ConfigureRobinHarvest.TimelockConfig({operationalRoleExecutionDelay: 0, configFunctionDelay: 0}),
             feeRecipient: feeRecipient,
             eligibilityThreshold: 10_000 ether,
             strategyMigrationDelay: 1 days,
@@ -250,7 +345,9 @@ contract DeploymentFlowTest is Test {
             oracles: oracles,
             rewards: rewards,
             routes: routes,
-            swapAdapter: dexAdapter
+            swapAdapter: dexAdapter,
+            indexFinanceIntegrationVerified: true,
+            indexFinanceAddress: address(indexFinance)
         });
     }
 

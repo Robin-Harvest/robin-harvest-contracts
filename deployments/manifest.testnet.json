@@ -1,0 +1,33 @@
+{
+  "network": "robinhood-testnet",
+  "chainId": 46630,
+  "environment": "staging",
+  "indexFinanceIntegrationVerified": false,
+  "indexFinanceIntegrationNote": "IIndexFinanceCore is provisional. Set INDEX_FINANCE_INTEGRATION_VERIFIED=true only after official ABI verification.",
+  "contracts": {
+    "accessManager": "0x8B2B2F1Fd849D7E0AF9279Dbf23BCa9a6A5BEDbA",
+    "oracleRegistry": "0x283E657cdB7415353Aa413C2B0E02E7299451Ad3",
+    "rewardRegistry": "0x26257c281FEc63887e2d2e09f72d6744A12527E2",
+    "executionRouter": "0xD5cEd531646Ce173DF9f6e2e170A28CA9B7590A0",
+    "coreVault": "0xF4c8139B7c16D024169310647d30146de0281c48",
+    "coreStrategy": "0xE79672717C88e1247D53EF4d5c9a62C26908d923",
+    "growthVault": "0x0780dF4fE04ff515CD4E997Ff07ed2e98c9044c3",
+    "growthStrategy": "0xb85EF279E8866957ce176EA7c1c074b0023C464D",
+    "clVault": "0x1392Adf9e49274047809711A9ff01EC9b28B3451",
+    "clStrategy": "0x980E7870a8E8f9bD618C1864AFfACd2b5b32579e",
+    "clPolicy": "0xc69cdAE46Dd3eFC348644d6ee27fbDD6730CdF22",
+    "swapAdapter": "0x2b2A1A684f063253a66B308bC05076B2065458B8",
+    "v4PoolManager": "0x9dDcb4eC5b535d7FF1Cc8FF1366d565E56EaD489",
+    "v4PositionManager": "0xCf764208B3A3C5BAA0cca1eBfD3894260982232f",
+    "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3"
+  },
+  "tokens": {
+    "index": "0xA76EC50C0512F0cB53B5b11DE112D8A485f69950",
+    "indexFinance": "0x08BA25c1c3A1ceDD066Eb79DAA2d9c9b8984Ae85",
+    "clPairedToken": "0xEFcD98cD22F8e890dc05dCbAFcc451d611c4a1ca"
+  },
+  "governance": {
+    "operationalRoleExecutionDelaySeconds": 86400,
+    "configFunctionDelaySeconds": 172800
+  }
+}
