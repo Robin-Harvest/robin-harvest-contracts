@@ -3,13 +3,13 @@
 ![Solidity](https://img.shields.io/badge/Solidity-0.8.25-blue)
 ![Foundry](https://img.shields.io/badge/Foundry-v1.3.1+-orange)
 ![License](https://img.shields.io/badge/License-MIT-green)
-![Version](https://img.shields.io/badge/Version-v0.1.0--alpha-purple)
+![Version](https://img.shields.io/badge/Version-v1.2.0--pre--audit-purple)
 
 Foundry workspace for Robin Harvest, an ERC-4626 yield optimizer targeting Robinhood Chain and Index Finance (INDEX).
 
 ## Version & Audit Status
 
-**Current Version:** `v0.1.0-alpha`  
+**Current Version:** `v1.2.0`  
 **Status:** Feature Complete / Pre-Audit
 
 > ⚠️ **Audit Status:** No external audit has been completed. The protocol should be considered experimental until the launch checklist is fully satisfied.
@@ -188,10 +188,7 @@ Current implementation assumes:
 - Uniswap v4 core & periphery (pinned via Git submodules in `foundry.lock`)
 
 Current repository test suite includes:
-- Unit tests
-- Integration tests
-- Stateful invariant tests
-- Fuzz tests
+- **157 passed unit, integration, fuzz, and stateful invariant tests** (0 failed, 2 skipped live-RPC tests across 16 test suites)
 
 > ℹ️ **Note on Test Coverage & via-IR:** Because Uniswap v4 planning and tick math require solc `--via-ir` compilation, automated line coverage generation (`forge coverage`) exceeds Yul optimizer stack limits on large strategy contracts. Verification assurance relies on comprehensive unit, fork, gas, and stateful invariant suites (see [docs/STATIC_ANALYSIS.md](./docs/STATIC_ANALYSIS.md)).
 
@@ -217,7 +214,7 @@ Deployment consists of:
 6. Testnet validation
 7. Production enablement
 
-See [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md) for launch procedures.
+See [DEPLOYMENT.md](./DEPLOYMENT.md) for launch procedures.
 
 ## License
 

@@ -7,7 +7,7 @@ This is the hardening-gate record for the Uniswap V4 concentrated-liquidity migr
 | Check | Command | Result |
 |---|---|---|
 | Build | `forge build --skip test` | Pass |
-| Full tests | `forge test -vv` | 142 passed, 0 failed, 1 fork test skipped without RPC |
+| Full tests | `forge test -vv` | 157 passed, 0 failed, 2 fork tests skipped without live RPC (159 total) |
 | Fork tests | `ROBINHOOD_FORK_RPC=... forge test --match-contract ConcentratedLiquidityStrategyForkTest -vv` | 4 passed |
 | Slither | `slither . --fail-pedantic` | Pass (0 findings; safe equality/reentrancy false positives excluded in slither.config.json) |
 | Solhint | `npx solhint@6.2.3 'src/**/*.sol'` | Exit 0, but emits existing style/NatSpec/remapping warnings |

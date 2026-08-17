@@ -36,8 +36,8 @@ For example, a value of `300` means 3% deviation in `sqrtPriceX96`. Because toke
 - The strategy has one immutable vault destination.
 - Emergency return transfers pool currencies only to that vault.
 - The strategy uses official V4 PoolManager and PositionManager interfaces.
-- The strategy bounds active positions to 16 to cap looped accounting and emergency
-  work.
+- The strategy bounds active positions to MAX_ACTIVE_POSITIONS = 1 to eliminate
+  unbounded iteration loops and guarantee strict EIP-170 code size compliance.
 - Swaps pass through the approved ExecutionRouter and adapter route.
 - Oracle prices must be healthy and fresh according to OracleRegistry configuration.
 - Governance cannot mutate CL configuration while the strategy is paused.
@@ -47,7 +47,7 @@ For example, a value of `300` means 3% deviation in `sqrtPriceX96`. Because toke
 Completed locally:
 
 - Forge build
-- 142 unit, fuzz, and invariant tests
+- 157 unit, fuzz, and invariant tests (0 failed, 2 skipped live-RPC fork tests across 16 test suites)
 - TWAP expiry regression coverage
 - Exact Permit2 approval and cleanup coverage
 - Four fork scenarios against deployed Robinhood Chain V4 contracts
