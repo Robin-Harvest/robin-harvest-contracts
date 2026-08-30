@@ -329,12 +329,9 @@ contract GrowthStrategy is CoreStrategy, IInKindRedemptionStrategy {
 
         uint256 retained = retainedBalance[token];
         uint256 processAmount = amount > retained ? amount - retained : 0;
-        // Justification: processAmount == 0 checks if there is any new reward to process.
+        // Justification: processAmount == 0 means every token unit is already tracked in retainedBalance.
         // slither-disable-next-line incorrect-equality
-        if (processAmount == 0 && config.disposition == RewardDisposition.Retain) return 0;
-        // Justification: processAmount == 0 checks if there is any new reward to process.
-        // slither-disable-next-line incorrect-equality
-        if (processAmount == 0) return super._processRewardToken(token);
+        if (processAmount == 0) return 0;
 
         if (processAmount < config.minHarvestAmount) {
             emit CoreRewardDeferred(token, processAmount, config.minHarvestAmount);
@@ -349,8 +346,8 @@ contract GrowthStrategy is CoreStrategy, IInKindRedemptionStrategy {
         if (config.disposition == RewardDisposition.Sell) {
             // Justification: Reentrancy is prevented because harvest() is protected by nonReentrant.
             // slither-disable-next-line reentrancy-benign,reentrancy-events
-            assetGain = _sellReward(token, amount, config.adapter);
-            emit CoreRewardSold(token, amount, assetGain);
+            assetGain = _sellReward(token, processAmount, config.adapter);
+            emit CoreRewardSold(token, processAmount, assetGain);
             return assetGain;
         }
 

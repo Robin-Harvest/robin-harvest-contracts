@@ -1149,6 +1149,39 @@ contract GrowthStrategyTest is Test {
         assertGe(navAfterUnpause, navBeforePause - 100 ether);
     }
 
+    function testSellDispositionDoesNotLiquidateRetainedBalance() public {
+        _depositAndDeploy(1_000 ether);
+        _accrueReward(retainStock, 100 ether);
+
+        vm.prank(governance);
+        strategy.harvest();
+
+        assertEq(strategy.retainedBalance(address(retainStock)), 100 ether);
+        assertEq(retainStock.balanceOf(address(strategy)), 100 ether);
+
+        uint256 indexBefore = index.balanceOf(address(vault));
+
+        vm.startPrank(governance);
+        rewardRegistry.setRewardTokenConfig(
+            address(retainStock), _rewardConfig(RewardDisposition.Sell, address(retainFeed), 0)
+        );
+        strategy.harvest();
+        vm.stopPrank();
+
+        assertEq(strategy.retainedBalance(address(retainStock)), 100 ether);
+        assertEq(retainStock.balanceOf(address(strategy)), 100 ether);
+        assertEq(index.balanceOf(address(vault)), indexBefore);
+
+        _accrueReward(retainStock, 10 ether);
+
+        vm.prank(governance);
+        strategy.harvest();
+
+        assertEq(strategy.retainedBalance(address(retainStock)), 100 ether);
+        assertEq(retainStock.balanceOf(address(strategy)), 100 ether);
+        assertEq(index.balanceOf(address(vault)), indexBefore + 10 ether);
+    }
+
     function testPruneRetainedToken() external {
         _depositAndDeploy(1_000 ether);
         _accrueReward(retainStock, 100 ether);
