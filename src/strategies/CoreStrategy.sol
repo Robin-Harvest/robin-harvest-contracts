@@ -153,6 +153,9 @@ contract CoreStrategy is StrategyBase {
         }
     }
 
+    // Justification: GrowthStrategy fully overrides this hook; Slither only tracked the removed super-call path.
+    // CoreStrategy still uses it via StrategyBase.processRewardToken during Core harvests.
+    // slither-disable-next-line dead-code
     function _processRewardToken(address token) internal virtual override returns (uint256 assetGain) {
         uint256 amount = IERC20(token).balanceOf(address(this));
         // Justification: amount == 0 is an early return for dust balances, not a balance invariant.
